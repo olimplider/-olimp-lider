@@ -346,6 +346,8 @@ body {
   text-transform: uppercase;
   color: #f2e6b8;
 }
+.refresh-btn { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; border-color: rgba(212,175,55,0.3); font-size: 13px; }
+.refresh-btn:hover { border-color: var(--gold); }
 .content { padding: 24px 28px; flex: 1; animation: pageIn 0.4s ease; }
 @keyframes pageIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
@@ -744,6 +746,7 @@ td.actions { display: flex; gap: 6px; }
   .sidebar-footer .user-info, .sidebar-footer .contact-links { display: none; }
   .form-grid { grid-template-columns: 1fr; }
   .content { padding: 16px; }
+  .refresh-label { display: none; }
   .topbar { padding: 12px 16px; }
   .login-card { padding: 34px 24px; }
   .contact-strip { display: flex; }

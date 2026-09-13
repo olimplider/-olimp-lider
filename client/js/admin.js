@@ -198,7 +198,7 @@
     return base;
   }
 
-  function studentModal(student = null) {
+  function studentModal(student = null, prefillClass = '') {
     const s = student || {};
     const isEdit = !!student;
     const fee = s.monthlyFee || '';
@@ -220,7 +220,7 @@
           <div class="form-group"><label>Ism *</label><input id="fFirstName" value="${escapeHtml(s.firstName)}" placeholder="Ali"></div>
           <div class="form-group"><label>Otasining ismi</label><input id="fPatronymic" value="${escapeHtml(s.patronymic)}" placeholder="Valiyevich"></div>
           <div class="form-group"><label>Sinf</label>
-            <input id="fClass" list="classListDl" value="${escapeHtml(s.className)}" placeholder="masalan: 7-A">
+            <input id="fClass" list="classListDl" value="${escapeHtml(prefillClass || s.className)}" placeholder="masalan: 7-A">
             <datalist id="classListDl">${classOptions}</datalist>
           </div>
           <div class="form-group"><label>Tug'ilgan sana</label><input id="fBirth" type="date" value="${escapeHtml(s.birthDate)}"></div>
@@ -237,6 +237,7 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="window.appCloseModal()">Bekor</button>
+        ${!isEdit ? `<button class="btn btn-outline" id="saveStudentMoreBtn" title="Saqlaydi va shu sinf uchun yana bo'sh forma ochadi">Qo'shish va yana qo'shish</button>` : ''}
         <button class="btn btn-primary" id="saveStudentBtn">${isEdit ? 'Saqlash' : 'Qo\'shish'}</button>
       </div>
     `);
@@ -255,8 +256,8 @@
       });
     }
 
-    document.getElementById('saveStudentBtn').addEventListener('click', async () => {
-      const btn = document.getElementById('saveStudentBtn');
+    const doSave = async (more) => {
+      const btn = document.getElementById(more ? 'saveStudentMoreBtn' : 'saveStudentBtn');
       btn.disabled = true;
       try {
         const body = {
@@ -286,18 +287,29 @@
           await API.post('/api/students/' + s.id + '/photo', fd, true);
         }
 
-        closeModal();
-        if (!isEdit && result.parentUsername) {
-          showCredentialsModal(result);
+        if (more) {
+          closeModal();
+          toast('O\'quvchi qo\'shildi');
+          studentModal(null, body.className);
         } else {
-          toast(isEdit ? 'Saqlanib qo\'yildi' : 'O\'quvchi qo\'shildi');
-          await renderStudents();
+          closeModal();
+          if (!isEdit && result.parentUsername) {
+            showCredentialsModal(result);
+          } else {
+            const y = window.scrollY;
+            toast(isEdit ? 'Saqlanib qo\'yildi' : 'O\'quvchi qo\'shildi');
+            await renderStudents();
+            if (y) window.scrollTo(0, y);
+          }
         }
       } catch (e) {
         toast(e.message, 'error');
         btn.disabled = false;
       }
-    });
+    };
+    document.getElementById('saveStudentBtn').addEventListener('click', () => doSave(false));
+    const moreBtn = document.getElementById('saveStudentMoreBtn');
+    if (moreBtn) moreBtn.addEventListener('click', () => doSave(true));
   }
 
   function showCredentialsModal(st) {
@@ -319,7 +331,12 @@
       </div>
       <div class="modal-footer"><button class="btn btn-primary" onclick="showCredentialsModal._done()">Yopish</button></div>
     `;
-    showCredentialsModal._done = async () => { closeModal(); await renderStudents(); };
+    showCredentialsModal._done = async () => {
+      const y = window.scrollY;
+      closeModal();
+      await renderStudents();
+      if (y) window.scrollTo(0, y);
+    };
     modalOverlay.classList.add('open');
   }
 
@@ -334,9 +351,11 @@
     const s = students.find((x) => x.id === id);
     if (!s) return;
     if (!confirm('O\'quvchi "' + s.lastName + ' ' + s.firstName + '" va uning barcha ma\'lumotlari o\'chiriladi. Davom etasizmi?')) return;
+    const y = window.scrollY;
     await API.del('/api/students/' + id);
     toast('O\'quvchi o\'chirildi');
     await renderStudents();
+    if (y) window.scrollTo(0, y);
   }
 
   // ---------- Ota-ona login/parolini ko'rish / qayta yaratish ----------
@@ -1017,6 +1036,13 @@ initContact('contactLinks');
   window.appNav = (s) => {
     document.querySelectorAll('.nav-item[data-section]').forEach((b) => b.classList.toggle('active', b.dataset.section === s));
     navigateTo(s);
+  };
+  window.appRefresh = async () => {
+    const btn = document.querySelector('.nav-item[data-section].active');
+    if (!btn) return;
+    const y = window.scrollY;
+    await navigateTo(btn.dataset.section);
+    if (y) window.scrollTo(0, y);
   };
   window.appCloseModal = closeModal;
   window.appAddStudent = () => studentModal();

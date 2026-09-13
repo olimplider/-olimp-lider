@@ -190,6 +190,11 @@
   });
 
   let rows = [];
+  window.appRefresh = async () => {
+    const y = window.scrollY;
+    await render();
+    if (y) window.scrollTo(0, y);
+  };
   initContact('contactLinks');
   initContact('contactTop');
   render();

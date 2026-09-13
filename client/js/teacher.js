@@ -509,6 +509,13 @@
   window.appDelTest = (id) => deleteTest(id);
   window.appMarkAllPresent = () => markAllPresent();
   window.appJCell = (id, date, btn) => jCell(id, date, btn);
+  window.appRefresh = async () => {
+    const btn = document.querySelector('.nav-item[data-section].active');
+    if (!btn) return;
+    const y = window.scrollY;
+    await navigate(btn.dataset.section);
+    if (y) window.scrollTo(0, y);
+  };
   window.appSetTAtt = async (id, status) => {
     await setTAtt(id, status);
     await renderAttTable();
