@@ -16,6 +16,7 @@
     overview: 'Umumiy holat',
     grades: 'Baholar',
     attendance: 'Davomat',
+    diary: 'Kundalik',
     payments: 'To\'lovlar',
   };
 
@@ -42,6 +43,7 @@
       if (section === 'overview') renderOverview();
       else if (section === 'grades') renderGrades();
       else if (section === 'attendance') renderAttendance();
+      else if (section === 'diary') renderDiary();
       else if (section === 'payments') renderPayments();
     } catch (e) {
       content.innerHTML = '<div class="alert-error" style="display:block;max-width:500px;margin:20px auto;">' + escapeHtml(e.message) + '</div>';
@@ -132,6 +134,29 @@
       <div class="panel"><div class="panel-header"><h3>Davomat yozuvlari</h3><span class="muted">${data.attendance.length} ta yozuv</span></div>
       ${rows ? `<div class="table-wrap"><table><thead><tr><th>Sana</th><th>Holat</th></tr></thead><tbody>${rows}</tbody></table></div>`
         : `<div class="panel-body"><p class="empty-note">Hali davomat yozuvlari yo'q.</p></div>`}</div>`;
+  }
+
+  function renderDiary() {
+    const W = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'];
+    const days = (data.diary || []).map((d) => {
+      const dt = new Date(d.date + 'T00:00:00');
+      const weekday = W[dt.getDay()];
+      const attBadge = d.attendance ? `<span class="badge ${d.attendance === 'present' ? 'badge-green' : d.attendance === 'late' ? 'badge-amber' : 'badge-red'}">${d.attendance === 'present' ? '✓ Keldi' : d.attendance === 'late' ? '⏰ Kechikdi' : '✗ Kelmadi'}</span>` : '';
+      const entries = d.entries.map((en) => `
+        <div class="diary-entry">
+          <span class="diary-subj">${escapeHtml(en.subject)}</span>
+          <span class="diary-score ${en.score >= 4 ? 'g' : en.score === 3 ? 'a' : 'r'}">${en.score}</span>
+        </div>`).join('');
+      const note = entries || '<span class="muted">Baho kiritilmagan</span>';
+      return `
+        <div class="panel diary-day">
+          <div class="panel-header"><h3>${escapeHtml(d.date)} <span class="muted" style="text-transform:none;font-weight:400">— ${weekday}</span></h3>${attBadge}</div>
+          <div class="panel-body diary-body">${note}</div>
+        </div>`;
+    }).join('');
+
+    content.innerHTML = `${hero()}
+      ${days || '<div class="panel"><div class="empty-state"><h4>Hali kunlik yozuvlar yo\'q</h4><p class="muted">O\'qituvchi baho yoki davomat kiritganda, kundalik shaklida shu yerda ko\'rinadi.</p></div></div>'}`;
   }
 
   function renderPayments() {

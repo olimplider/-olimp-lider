@@ -127,6 +127,23 @@ const SUBJECTS = [
   'Informatika', 'Jismoniy tarbiya', 'Chizmachilik', 'Musiqa', 'Tasviriy san\'at',
 ];
 
+let _subjectsCache = null;
+
+async function getSubjects() {
+  if (_subjectsCache) return _subjectsCache;
+  try {
+    _subjectsCache = Array.isArray(await API.get('/api/subjects')) ? await API.get('/api/subjects') : null;
+  } catch (e) {
+    _subjectsCache = null;
+  }
+  if (!_subjectsCache || !_subjectsCache.length) _subjectsCache = SUBJECTS.slice();
+  return _subjectsCache;
+}
+
+function resetSubjectsCache() {
+  _subjectsCache = null;
+}
+
 function monthNames() {
   return ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun',
     'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
@@ -139,5 +156,5 @@ function renderMonthsSelect(selected) {
 
 function renderYearsSelect() {
   const y = new Date().getFullYear();
-  return `<option>${y}</option><option>${y + 1}</option>`;
+  return `<option>${y - 1}</option><option>${y}</option><option>${y + 1}</option>`;
 }

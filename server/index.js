@@ -140,6 +140,72 @@ app.put('/api/settings', authRequired, adminOnly, (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- Fanlar ----------
+const DEFAULT_SUBJECTS = [
+  'Matematika', 'Ona tili', 'Adabiyot', 'Fizika', 'Kimyo',
+  'Biologiya', 'Tarix', 'Geografiya', 'Ingliz tili', 'Rus tili',
+  'Informatika', 'Jismoniy tarbiya', 'Chizmachilik', 'Musiqa', 'Tasviriy san\'at',
+];
+
+function getSubjects() {
+  if (!Array.isArray(db.store.subjects)) db.store.subjects = [];
+  if (!db.store.subjects.length) {
+    db.store.subjects = DEFAULT_SUBJECTS.slice();
+    db.saveCollection('subjects');
+  }
+  return db.store.subjects;
+}
+
+app.get('/api/subjects', authRequired, (req, res) => {
+  res.json(getSubjects());
+});
+
+app.post('/api/subjects', authRequired, adminOnly, (req, res) => {
+  const name = String((req.body || {}).name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Fan nomi bo`sh bo`lmasin' });
+  const subs = getSubjects();
+  if (subs.some((s) => s.toLowerCase() === name.toLowerCase())) {
+    return res.status(400).json({ error: 'Bunday fan allaqachon bor' });
+  }
+  subs.push(name);
+  db.saveCollection('subjects');
+  res.status(201).json({ ok: true, subjects: subs });
+});
+
+app.put('/api/subjects/:old', authRequired, adminOnly, (req, res) => {
+  const old = String(req.params.old || '').trim();
+  const name = String((req.body || {}).name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Yangi nom bo`sh bo`lmasin' });
+  const subs = getSubjects();
+  const idx = subs.findIndex((s) => s === old);
+  if (idx < 0) return res.status(404).json({ error: 'Fan topilmadi' });
+  if (subs.some((s) => s !== old && s.toLowerCase() === name.toLowerCase())) {
+    return res.status(400).json({ error: 'Bunday fan allaqachon bor' });
+  }
+  subs[idx] = name;
+  db.store.grades = db.store.grades.map((g) => (g.subject === old ? { ...g, subject: name } : g));
+  db.store.tests = db.store.tests.map((t) => (t.subject === old ? { ...t, subject: name } : t));
+  db.store.teachers = db.store.teachers.map((t) =>
+    Array.isArray(t.subjects) ? { ...t, subjects: t.subjects.map((s) => (s === old ? name : s)) } : t
+  );
+  db.saveAll();
+  res.json({ ok: true, subjects: subs });
+});
+
+app.delete('/api/subjects/:name', authRequired, adminOnly, (req, res) => {
+  const name = String(req.params.name || '').trim();
+  const subs = getSubjects();
+  const next = subs.filter((s) => s !== name);
+  if (next.length === subs.length) return res.status(404).json({ error: 'Fan topilmadi' });
+  db.store.subjects = next;
+  db.store.teachers = db.store.teachers.map((t) =>
+    Array.isArray(t.subjects) ? { ...t, subjects: t.subjects.filter((s) => s !== name) } : t
+  );
+  db.saveCollection('subjects');
+  db.saveCollection('teachers');
+  res.json({ ok: true, subjects: next });
+});
+
 // ---------- O'qituvchilar ----------
 function teacherOnly(req, res, next) {
   if (req.user.role !== 'teacher') return res.status(403).json({ error: 'Ruxsat yo`q' });
@@ -279,11 +345,47 @@ app.get('/api/teacher/grades', authRequired, teacherOnly, (req, res) => {
   const className = String(req.query.className || '').trim();
   const subject = String(req.query.subject || '').trim();
   const date = String(req.query.date || '').trim();
+  const month = String(req.query.month || '').trim();
+  const year = String(req.query.year || '').trim();
   if (!canClass(teacher, className)) return res.status(403).json({ error: 'Bu sinf sizga biriktirilmagan' });
 
   const ids = new Set(db.store.students.filter((s) => (s.className || '(sinsiz)') === className).map((s) => s.id));
-  const list = db.store.grades.filter((g) => ids.has(g.studentId) && (!subject || g.subject === subject) && (!date || g.date === date));
+  let list = db.store.grades.filter((g) => ids.has(g.studentId) && (!subject || g.subject === subject) && (!date || g.date === date));
+  if (month && year) {
+    const prefix = `${year}-${String(month).padStart(2, '0')}`;
+    list = list.filter((g) => g.date.startsWith(prefix));
+  }
   res.json(list);
+});
+
+// Bitta bahoni qo'yish yoki o'chirish (jurnal uchun)
+app.post('/api/teacher/grades/cell', authRequired, (req, res) => {
+  const b = req.body || {};
+  const subject = String(b.subject || '').trim();
+  const className = String(b.className || '').trim();
+  const date = String(b.date || new Date().toISOString().slice(0, 10));
+  const studentId = Number(b.studentId);
+  const student = db.store.students.find((s) => s.id === studentId);
+  if (!student || (student.className || '(sinsiz)') !== className) return res.status(400).json({ error: 'O`quvchi topilmadi' });
+  if (!subject) return res.status(400).json({ error: 'Fan ko`rsatilmagan' });
+
+  if (req.user.role === 'teacher') {
+    const teacher = currentTeacher(req);
+    if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+    if (!canClass(teacher, className)) return res.status(403).json({ error: 'Bu sinf sizga biriktirilmagan' });
+    if (!teacher.subjects.includes(subject)) return res.status(403).json({ error: 'Bu fan sizga biriktirilmagan' });
+  }
+
+  const score = b.score === null || b.score === '' || b.score === undefined ? null : Number(b.score);
+  const existing = db.store.grades.find((g) => g.studentId === studentId && g.subject === subject && g.date === date);
+  if (score === null || !(score >= 1 && score <= 5)) {
+    if (existing) db.store.grades = db.store.grades.filter((g) => g !== existing);
+  } else {
+    if (existing) existing.score = score;
+    else db.store.grades.push({ id: db.nextId('grades'), studentId, subject, score, date });
+  }
+  db.saveCollection('grades');
+  res.json({ ok: true });
 });
 
 app.post('/api/teacher/grades/bulk', authRequired, teacherOnly, (req, res) => {
@@ -863,7 +965,20 @@ app.get('/api/parent', authRequired, (req, res) => {
   }
   const avgGrade = grades.length ? grades.reduce((a, b) => a + b.score, 0) / grades.length : null;
 
-  res.json({ student, grades, attendance, payments, subjectAverages, avgGrade });
+  const dateSet = new Set([...grades.map((g) => g.date), ...attendance.map((a) => a.date)]);
+  const diary = [...dateSet]
+    .sort((a, b) => b.localeCompare(a))
+    .map((date) => {
+      const bySubject = {};
+      grades.filter((g) => g.date === date).forEach((g) => { bySubject[g.subject] = g.score; });
+      return {
+        date,
+        attendance: attendance.find((a) => a.date === date)?.status || null,
+        entries: Object.keys(bySubject).map((subject) => ({ subject, score: bySubject[subject] })),
+      };
+    });
+
+  res.json({ student, grades, attendance, payments, subjectAverages, avgGrade, diary });
 });
 
 // ---------- Statistika (dashbord) ----------

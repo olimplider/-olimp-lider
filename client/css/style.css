@@ -695,6 +695,43 @@ td.actions { display: flex; gap: 6px; }
 }
 .contact-strip .contact-link { font-size: 14px; }
 
+/* ------------------- JURNAL (o'qituvchi) ------------------- */
+.journal-wrap { overflow-x: auto; }
+.journal { border-collapse: separate; border-spacing: 0; min-width: 640px; }
+.journal .jname {
+  position: sticky; left: 0; z-index: 2;
+  background: #1a2113;
+  border-right: 1px solid rgba(212, 175, 55, 0.35);
+  padding: 8px 12px; font-size: 13px; min-width: 150px;
+}
+.journal th.jname { background: #202a16; }
+.journal .jhead {
+  padding: 6px 2px; font-size: 11px; color: var(--text-muted);
+  border: 1px solid rgba(212, 175, 55, 0.15); min-width: 34px; text-align: center;
+}
+.journal .jhead .jday { font-size: 12px; color: var(--text); font-weight: 700; }
+.journal td { border-bottom: 1px solid rgba(212, 175, 55, 0.12); padding: 4px 2px; text-align: center; }
+.jcell {
+  width: 32px; height: 32px; min-width: 32px; border-radius: 8px; border: none;
+  cursor: pointer; font-weight: 700; font-size: 15px; background: #0c1009; color: var(--text-muted);
+}
+.jcell:hover { background: rgba(212, 175, 55, 0.18); }
+.jcell.s5 { background: rgba(88, 169, 70, 0.85); color: #0b1f0b; }
+.jcell.s4 { background: rgba(88, 169, 70, 0.55); color: #0b1f0b; }
+.jcell.s3 { background: rgba(212, 175, 55, 0.6); color: #1a2113; }
+.jcell.s2 { background: rgba(192, 57, 43, 0.55); color: #fff; }
+.jcell.s1 { background: rgba(192, 57, 43, 0.82); color: #fff; }
+.javg { padding: 8px; text-align: center; font-weight: 700; color: var(--gold); border-left: 1px solid rgba(212, 175, 55, 0.25); }
+.javghead { border-left: 1px solid rgba(212, 175, 55, 0.35) !important; }
+
+/* ------------------- KUNDALIK (ota-ona) ------------------- */
+.diary-body { display: flex; flex-direction: column; gap: 8px; }
+.diary-entry { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(212, 175, 55, 0.15); border-radius: 10px; }
+.diary-subj { font-weight: 600; font-size: 14px; }
+.diary-score { min-width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; font-weight: 800; font-size: 15px; background: rgba(88, 169, 70, 0.25); color: #9ce08f; }
+.diary-score.a { background: rgba(212, 175, 55, 0.25); color: #e8d28a; }
+.diary-score.r { background: rgba(192, 57, 43, 0.25); color: #f59588; }
+
 @keyframes spinSlow { to { transform: rotate(360deg); } }
 @keyframes radarSweep { to { transform: rotate(360deg); } }
 

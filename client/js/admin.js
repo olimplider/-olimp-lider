@@ -50,6 +50,7 @@
     attendance: 'Davomat',
     grades: 'Baholar',
     teachers: "O'qituvchilar",
+    subjects: 'Fanlar',
     settings: 'Sozlamalar',
   };
 
@@ -74,6 +75,7 @@
       else if (section === 'attendance') await renderAttendance();
       else if (section === 'grades') await renderGrades();
       else if (section === 'teachers') await renderTeachers();
+      else if (section === 'subjects') await renderSubjects();
       else if (section === 'settings') renderSettings();
     } catch (e) {
       content.innerHTML = '<div class="alert-error" style="display:block;max-width:500px;margin:20px auto;">' + escapeHtml(e.message) + '</div>';
@@ -843,8 +845,9 @@ initContact('contactLinks');
     const teachers = await API.get('/api/teachers');
     const t = id != null ? teachers.find((x) => x.id === id) : null;
     const classes = [...new Set((await loadStudents(true)).map((s) => s.className).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'uz'));
+    const subjects = await getSubjects();
 
-    const subjBoxes = SUBJECTS.map((s) => `<label class="chip"><input type="checkbox" class="t-subj" value="${escapeHtml(s)}" ${t && t.subjects.includes(s) ? 'checked' : ''}> ${escapeHtml(s)}</label>`).join('');
+    const subjBoxes = subjects.map((s) => `<label class="chip"><input type="checkbox" class="t-subj" value="${escapeHtml(s)}" ${t && t.subjects.includes(s) ? 'checked' : ''}> ${escapeHtml(s)}</label>`).join('');
     const classBoxes = classes.length
       ? classes.map((c) => `<label class="chip"><input type="checkbox" class="t-class" value="${escapeHtml(c)}" ${t && t.classes.includes(c) ? 'checked' : ''}> ${escapeHtml(c)}</label>`).join('')
       : '<span class="muted">Avval o\'quvchilar qo\'shilsin — sinflar shu yerda paydo bo\'ladi.</span>';
@@ -940,6 +943,76 @@ initContact('contactLinks');
     await renderTeachers();
   }
 
+  // ---------- FANLAR ----------
+  async function renderSubjects() {
+    const subs = await getSubjects();
+    topbarActions.innerHTML = `<div class="toolbar">
+      <button class="btn btn-primary" onclick="window.appAddSubject()">+ Fan qo'shish</button>
+    </div>`;
+
+    const chips = subs.map((s, i) => `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border:1px solid rgba(212,175,55,.25);border-radius:10px;margin-bottom:8px">
+        <span style="font-weight:600">${escapeHtml(s)}</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-outline btn-sm" onclick="window.appEditSubject(${i})">Tahrirlash</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="window.appDelSubject(${i})">O'chirish</button>
+        </div>
+      </div>`).join('');
+
+    content.innerHTML = `
+      <div class="panel">
+        <div class="panel-header"><h3>Fanlar ro'yxati</h3><span class="badge badge-blue">${subs.length} ta fan</span></div>
+        <div class="panel-body">
+          ${chips || '<p class="empty-note">Hali fan yo\'q. "Fan qo\'shish" tugmasini bosing.</p>'}
+          <div class="hint" style="margin-top:12px">Bu ro'yxat o'qituvchi biriktirishda va o'qituvchi jurnalida ishlatiladi. Nom o'zgartirilsa, eski baholar va nazoratlar avtomatik yangi nomga o'tadi.</div>
+        </div>
+      </div>`;
+  }
+
+  async function subjectModal(idx) {
+    const subs = await getSubjects();
+    const current = (idx !== null && idx !== undefined) ? subs[idx] : '';
+    showModal(`
+      <div class="modal-title">${current ? 'Fanni tahrirlash' : 'Yangi fan'}</div>
+      <div class="form-group"><label>Fan nomi *</label><input id="subjName" value="${escapeHtml(current || '')}" placeholder="Masalan: Diniy ta'limotlar"></div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="window.appCloseModal()">Bekor</button>
+        <button class="btn btn-primary" id="subjSave">${current ? 'Saqlash' : "Qo'shish"}</button>
+      </div>`);
+    const saveBtn = document.getElementById('subjSave');
+    saveBtn.addEventListener('click', async () => {
+      const name = document.getElementById('subjName').value.trim();
+      if (!name) return toast('Nom kiritilmagan', 'error');
+      saveBtn.disabled = true;
+      try {
+        if (current) await API.put('/api/subjects/' + encodeURIComponent(current), { name });
+        else await API.post('/api/subjects', { name });
+        resetSubjectsCache();
+        closeModal();
+        toast('Fan saqlandi');
+        await renderSubjects();
+      } catch (e) {
+        toast(e.message, 'error');
+        saveBtn.disabled = false;
+      }
+    });
+  }
+
+  async function deleteSubject(idx) {
+    const subs = await getSubjects();
+    const name = subs[idx];
+    if (!name) return;
+    if (!confirm('"' + name + '" fanini o\'chirasizmi? O\'qituvchilardan bu fan olib tashlanadi.')) return;
+    try {
+      await API.del('/api/subjects/' + encodeURIComponent(name));
+      resetSubjectsCache();
+      toast("Fan o'chirildi");
+      await renderSubjects();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+
   // ---------- Global funksiyalar ----------
   window.appNav = (s) => {
     document.querySelectorAll('.nav-item[data-section]').forEach((b) => b.classList.toggle('active', b.dataset.section === s));
@@ -974,6 +1047,9 @@ initContact('contactLinks');
   window.appTeacherModal = (id) => teacherModal(id);
   window.appTeacherCred = (id) => teacherCred(id);
   window.appDelTeacher = (id) => deleteTeacher(id);
+  window.appAddSubject = () => subjectModal();
+  window.appEditSubject = (idx) => subjectModal(idx);
+  window.appDelSubject = (idx) => deleteSubject(idx);
   window.appCopyTxt = (id) => {
     const el = document.getElementById(id);
     if (!el) return;

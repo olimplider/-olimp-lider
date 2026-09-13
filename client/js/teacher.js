@@ -13,11 +13,10 @@
   const topbarActions = document.getElementById('topbarActions');
 
   let me = null;
-  let gradeClassName = '';
-  let gradeSubject = '';
-  let gradeDate = todayStr();
   let attClassName = '';
   let attDate = todayStr();
+  let _jCurrent = null;
+  let _jBusy = false;
 
   const TITLES = {
     dashboard: 'Dashbord',
@@ -145,76 +144,108 @@
       ${topList}`;
   }
 
-  // ---------- BAHOLAR ----------
+  // ---------- BAHOLAR (JURNAL) ----------
   async function renderGrades() {
     await loadMe();
     if (!me.teacher.classes.length) {
-      content.innerHTML = '<div class="panel"><div class="empty-state"><h4>Sizga sinf biriktirilmagan</h4><p class="muted">Administratordan sorining.</p></div></div>';
+      content.innerHTML = '<div class="panel"><div class="empty-state"><h4>Sizga sinf biriktirilmagan</h4><p class="muted">Administratordan so\'rang.</p></div></div>';
       return;
     }
+    const now = new Date();
 
     topbarActions.innerHTML = `<div class="toolbar">
-      <select id="gClass">${classOptions(gradeClassName, 'Sinf')}</select>
-      <select id="gSubject">${subjectOptions(gradeSubject)}</select>
-      <input type="date" id="gDate" class="date-pick" value="${gradeDate}">
+      <select id="jClass">${classOptions('', 'Sinf')}</select>
+      <select id="jSubject">${subjectOptions('')}</select>
+      <select id="jMonth">${renderMonthsSelect(now.getMonth() + 1)}</select>
+      <select id="jYear">${renderYearsSelect()}</select>
     </div>`;
 
-    ['gClass', 'gSubject', 'gDate'].forEach((id) => {
-      document.getElementById(id).addEventListener('change', (e) => {
-        if (id === 'gClass') gradeClassName = e.target.value;
-        else if (id === 'gSubject') gradeSubject = e.target.value;
-        else gradeDate = e.target.value;
-        renderGradeTable();
-      });
+    ['jClass', 'jSubject', 'jMonth', 'jYear'].forEach((id) => {
+      document.getElementById(id).addEventListener('change', () => renderJournal());
     });
 
-    await renderGradeTable();
+    await renderJournal();
   }
 
-  async function renderGradeTable() {
-    if (!gradeClassName || !gradeSubject) {
-      content.innerHTML = '<div class="panel"><div class="empty-state"><h4>Sinf va fanni tanlang</h4></div></div>';
+  function journalDays(month, year) {
+    const W = ['Ya', 'Du', 'Se', 'Chor', 'Pay', 'Ju', 'Sha'];
+    const days = [];
+    const last = new Date(year, month, 0).getDate();
+    for (let d = 1; d <= last; d++) {
+      const dow = new Date(year, month - 1, d).getDay();
+      if (dow === 0) continue;
+      days.push({ date: `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`, day: d, weekday: W[dow] });
+    }
+    return days;
+  }
+
+  async function renderJournal() {
+    const cls = document.getElementById('jClass').value;
+    const subj = document.getElementById('jSubject').value;
+    const month = Number(document.getElementById('jMonth').value);
+    const year = Number(document.getElementById('jYear').value);
+
+    if (!cls || !subj) {
+      content.innerHTML = '<div class="panel"><div class="empty-state"><h4>Sinf va fanni tanlang</h4><p class="muted">Jurnal tanlagan sinf va fan uchun oy davomida kunlik baholash jadvali.</p></div></div>';
       return;
     }
-    const students = await API.get('/api/teacher/students?className=' + encodeURIComponent(gradeClassName));
-    const existing = await API.get('/api/teacher/grades?className=' + encodeURIComponent(gradeClassName) + '&subject=' + encodeURIComponent(gradeSubject) + '&date=' + gradeDate);
-    const map = {};
-    existing.forEach((g) => (map[g.studentId] = g.score));
 
+    const students = await API.get('/api/teacher/students?className=' + encodeURIComponent(cls));
     if (!students.length) {
       content.innerHTML = '<div class="panel"><div class="empty-state"><h4>Bu sinfda o\'quvchi yo\'q</h4></div></div>';
       return;
     }
 
-    const rows = students.map((s) => `
-      <tr>
-        <td><div class="student-cell">${avatarHtml(s)}<div><div class="name">${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</div><div class="sub">${escapeHtml(s.patronymic)}</div></div></div></td>
-        <td><input type="number" class="score-input" data-id="${s.id}" min="1" max="5" step="1" value="${map[s.id] || ''}" placeholder="—"></td>
-      </tr>`).join('');
+    const grades = await API.get('/api/teacher/grades?className=' + encodeURIComponent(cls) + '&subject=' + encodeURIComponent(subj) + '&month=' + month + '&year=' + year);
+    const map = {};
+    grades.forEach((g) => { map[g.studentId + '|' + g.date] = g.score; });
+    _jCurrent = { className: cls, subject: subj, month, year };
+
+    const days = journalDays(month, year);
+    const head = '<th class="jname">O\'quvchi</th>' + days.map((d) => `<th class="jhead"><div class="jday">${d.day}</div><div class="jwd">${escapeHtml(d.weekday)}</div></th>`).join('') + '<th class="jhead javghead">O\'rtacha</th>';
+
+    const rows = students.map((s) => {
+      let sum = 0, n = 0;
+      const cells = days.map((d) => {
+        const score = map[s.id + '|' + d.date];
+        if (score) { sum += score; n++; }
+        return `<td><button class="jcell ${score ? 's' + score : 's0'}" onclick="window.appJCell(${s.id},'${d.date}',this)">${score || ''}</button></td>`;
+      }).join('');
+      const avg = n ? (sum / n).toFixed(1) : '';
+      return `<tr><td class="jname"><b>${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</b></td>${cells}<td class="javg">${avg}</td></tr>`;
+    }).join('');
 
     content.innerHTML = `
       <div class="panel">
-        <div class="panel-header"><h3>${escapeHtml(gradeClassName)} • ${escapeHtml(gradeSubject)} • ${escapeHtml(gradeDate)}</h3><span class="badge badge-blue">${students.length} o'quvchi</span></div>
-        <div class="panel-body" style="padding:0">
-          ${rows ? `<div class="table-wrap"><table><thead><tr><th>O'quvchi</th><th style="width:110px">Baho (1-5)</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
-          <div style="padding:14px"><button class="btn btn-primary" id="saveGradesBtn">Baholarni saqlash</button></div>
+        <div class="panel-header"><h3>${escapeHtml(cls)} • ${escapeHtml(subj)} • ${monthNames()[month - 1]} ${year}</h3><span class="badge badge-blue">${students.length} o'quvchi</span></div>
+        <div class="hint" style="padding:12px 14px 0">Katakka bosish bahoni aylantiradi: bo'sh → 5 → 4 → 3 → 2 → 1 → bo'sh. Har bir bosish zudlik bilan saqlanadi. (Yakshanba — dars kuni emas)</div>
+        <div class="table-wrap journal-wrap">
+          <table class="journal">
+            <thead><tr>${head}</tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
         </div>
       </div>`;
+  }
 
-    document.getElementById('saveGradesBtn').addEventListener('click', async () => {
-      const scores = [...document.querySelectorAll('.score-input')].map((el) => ({ studentId: Number(el.dataset.id), score: el.value.trim() === '' ? null : Number(el.value) })).filter((x) => x.score !== null && x.score >= 1 && x.score <= 5);
-      if (!scores.length) return toast('Hech qanday baho kiritilmadi', 'error');
-      const btn = document.getElementById('saveGradesBtn');
-      btn.disabled = true;
-      try {
-        const r = await API.post('/api/teacher/grades/bulk', { className: gradeClassName, subject: gradeSubject, date: gradeDate, scores });
-        toast(r.count + ' ta baho saqlandi');
-      } catch (e) {
-        toast(e.message, 'error');
-      } finally {
-        btn.disabled = false;
+  async function jCell(studentId, date, btn) {
+    if (_jBusy || !_jCurrent) return;
+    _jBusy = true;
+    try {
+      const cur = btn && btn.textContent.trim() !== '' ? Number(btn.textContent.trim()) : 0;
+      const order = [null, 5, 4, 3, 2, 1, null];
+      const idx = order.indexOf(cur);
+      const next = order[idx < 0 ? 0 : Math.min(idx + 1, order.length - 1)];
+      await API.post('/api/teacher/grades/cell', { className: _jCurrent.className, subject: _jCurrent.subject, date, studentId, score: next });
+      if (btn) {
+        btn.textContent = next === null ? '' : next;
+        btn.className = 'jcell ' + (next === null ? 's0' : 's' + next);
       }
-    });
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      _jBusy = false;
+    }
   }
 
   // ---------- DAVOMAT ----------
@@ -477,6 +508,7 @@
   window.appFillTest = (id) => fillTestModal(id);
   window.appDelTest = (id) => deleteTest(id);
   window.appMarkAllPresent = () => markAllPresent();
+  window.appJCell = (id, date, btn) => jCell(id, date, btn);
   window.appSetTAtt = async (id, status) => {
     await setTAtt(id, status);
     await renderAttTable();
