@@ -156,5 +156,5 @@ function renderMonthsSelect(selected) {
 
 function renderYearsSelect() {
   const y = new Date().getFullYear();
-  return `<option>${y - 1}</option><option>${y}</option><option>${y + 1}</option>`;
+  return `<option>${y}</option><option>${y + 1}</option>`;
 }
