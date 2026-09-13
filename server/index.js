@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const compression = require('compression');
 const db = require('./db');
 
 const app = express();
@@ -22,6 +23,7 @@ app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginResourcePolicy: false,
 }));
+app.use(compression({ threshold: 1024 }));
 
 const loginLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 daqiqa
@@ -43,11 +45,17 @@ const apiLimiter = rateLimit({
 app.use('/api/auth/login', loginLimiter);
 app.use('/api/', apiLimiter);
 
-app.use('/uploads', express.static(UPLOAD_DIR));
+app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '7d' }));
 
 // ---------- Statik frontend ----------
 const CLIENT_DIR = path.join(__dirname, '..', 'client');
-app.use(express.static(CLIENT_DIR));
+app.use(express.static(CLIENT_DIR, {
+  maxAge: '7d',
+  etag: true,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+  },
+}));
 
 app.get('/', (req, res) => res.redirect('/login.html'));
 

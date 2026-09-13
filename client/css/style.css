@@ -42,7 +42,7 @@ body {
   padding: 20px;
   position: relative;
   overflow: hidden;
-  background-image: url("/assets/banner.png");
+  background-image: url("/assets/banner.jpg");
   background-size: cover;
   background-position: center;
 }
@@ -809,6 +809,7 @@ button, .nav-item { -webkit-tap-highlight-color: transparent; }
 @media (max-width: 900px) {
   /* Pastki (mobil) navigatsiya paneli */
   .app { display: block; }
+  body { background-attachment: scroll; }
   .sidebar {
     width: 100%;
     height: auto;
