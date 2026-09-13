@@ -121,6 +121,22 @@ async function initContact(containerId) {
   }
 }
 
+function initClock(id) {
+  const el = document.getElementById(id);
+  if (!el || el.dataset.clockInit) return;
+  el.dataset.clockInit = '1';
+  const fmtDate = new Intl.DateTimeFormat('uz-UZ', { timeZone: 'Asia/Tashkent', year: 'numeric', month: 'long', day: 'numeric' });
+  const fmtTime = new Intl.DateTimeFormat('uz-UZ', { timeZone: 'Asia/Tashkent', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  const icon = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+  const tick = () => {
+    const d = new Date();
+    const dd = fmtDate.format(d).replace(/[,.].*$/, '');
+    el.innerHTML = icon + '<span class="clock-date">' + dd + '</span><span class="clock-time">' + fmtTime.format(d) + '</span>';
+  };
+  tick();
+  setInterval(tick, 1000);
+}
+
 const SUBJECTS = [
   'Matematika', 'Ona tili', 'Adabiyot', 'Fizika', 'Kimyo',
   'Biologiya', 'Tarix', 'Geografiya', 'Ingliz tili', 'Rus tili',

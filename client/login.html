@@ -33,11 +33,13 @@
         Maktab ma'muridan so'rang: O'quvchilar → "Ota-ona" (parolni yangilash) yoki O'qituvchilar → "Kirish ma'lumotlari".
       </div>
       <div id="contactLine" style="margin-top:16px"></div>
+      <div class="clock-box login-clock" id="clock"></div>
     </div>
   </div>
   <script src="/js/api.js"></script>
   <script>
     initContact('contactLine');
+    initClock('clock');
 
     const roleOf = (role) => (role === 'admin' ? '/admin.html' : role === 'teacher' ? '/teacher.html' : '/parent.html');
     if (API.getToken()) {

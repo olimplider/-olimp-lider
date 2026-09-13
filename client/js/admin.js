@@ -708,7 +708,7 @@
     const summary = classes.reduce((a, c) => a + c.count, 0);
     const rows = classes.map((c, i) => `
       <tr>
-        <td><div style="display:flex;align-items:center;gap:12px"><span class="avatar">${escapeHtml(c.name)}</span><div><div class="name">${escapeHtml(c.name)} sini</div><div class="sub">${c.count} ta o'quvchi</div></div></div></td>
+        <td><div style="display:flex;align-items:center;gap:12px"><span class="avatar">${escapeHtml(c.name)}</span><div><div class="name">${escapeHtml(c.name)} sinfi</div><div class="sub">${c.count} ta o'quvchi</div></div></div></td>
         <td><span class="badge badge-blue">${c.count} o'quvchi</span></td>
         <td>${c.totalFee ? c.totalFee.toLocaleString('ru-RU') + ' so\'m/oy' : '—'}</td>
         <td class="actions">
@@ -735,9 +735,9 @@
   }
 
   async function deleteClass(name) {
-    if (!confirm('"' + name + '" sini va undagi barcha o\'quvchilarni (to\'lov, davomat, baholar bilan) o\'chirasizmi?')) return;
+    if (!confirm('"' + name + '" sinfi va undagi barcha o\'quvchilarni (to\'lov, davomat, baholar bilan) o\'chirasizmi?')) return;
     await API.del('/api/classes/' + encodeURIComponent(name));
-    toast(name + ' sini o\'chirildi');
+    toast(name + ' sinfi o\'chirildi');
     await renderClasses();
   }
 
@@ -792,7 +792,7 @@
           });
           toast('Bog\'lanish ma\'lumotlari saqlandi');
 initContact('contactLinks');
-          initContact('contactTop');
+initContact('contactTop');
         } catch (e) {
           toast(e.message, 'error');
         } finally {
@@ -1116,5 +1116,6 @@ initContact('contactLinks');
   // start
 initContact('contactLinks');
   initContact('contactTop');
+  initClock('clock');
   navigateTo('dashboard');
 })();

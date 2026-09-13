@@ -57,7 +57,7 @@
         ${s.photo ? `<img class="avatar" src="${escapeHtml(s.photo)}" alt="foto">` : `<span class="avatar">${escapeHtml((s.lastName + s.firstName).slice(0, 2))}</span>`}
         <div>
           <h2>${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</h2>
-          <div class="meta">${escapeHtml(s.patronymic)} • ${escapeHtml(s.className)} sini</div>
+          <div class="meta">${escapeHtml(s.patronymic)} • ${escapeHtml(s.className)} sinfi</div>
           <div class="meta">${escapeHtml(s.parentName)} • ${escapeHtml(s.parentPhone)}</div>
         </div>
         <div class="avg-circle">${data.avgGrade ? data.avgGrade.toFixed(2) : '—'}<span>o'rt. baho</span></div>
@@ -197,5 +197,6 @@
   };
   initContact('contactLinks');
   initContact('contactTop');
+  initClock('clock');
   render();
 })();

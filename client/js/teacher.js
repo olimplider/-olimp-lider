@@ -532,5 +532,6 @@
   // start
   initContact('contactLinks');
   initContact('contactTop');
+  initClock('clock');
   navigate('dashboard');
 })();
