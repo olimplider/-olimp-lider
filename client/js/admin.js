@@ -49,6 +49,7 @@
     classes: 'Sinflar',
     attendance: 'Davomat',
     grades: 'Baholar',
+    teachers: "O'qituvchilar",
     settings: 'Sozlamalar',
   };
 
@@ -72,6 +73,7 @@
       else if (section === 'classes') await renderClasses();
       else if (section === 'attendance') await renderAttendance();
       else if (section === 'grades') await renderGrades();
+      else if (section === 'teachers') await renderTeachers();
       else if (section === 'settings') renderSettings();
     } catch (e) {
       content.innerHTML = '<div class="alert-error" style="display:block;max-width:500px;margin:20px auto;">' + escapeHtml(e.message) + '</div>';
@@ -720,40 +722,62 @@
 
   // ---------- SOZLAMALAR ----------
   function renderSettings() {
-    topbarActions.innerHTML = '';
-    content.innerHTML = `
-      <div class="panel" style="max-width:560px">
-        <div class="panel-header"><h3>Login va parolni o'zgartirish</h3></div>
-        <div class="panel-body">
-          <div class="hint">Parolni o'zgartirish uchun joriy parolni kiritish shart. Yangi login oldingi login o'rniga o'tadi.</div>
-          <div class="form-group"><label>Joriy parol *</label><input type="password" id="sCurPass" placeholder="Hozirgi parolingiz"></div>
-          <div class="form-grid">
-            <div class="form-group"><label>Yangi login</label><input id="sUser" placeholder="yangi login (kiritmasangiz o'zgarmaydi)"></div>
-            <div class="form-group"><label>Yangi parol</label><input type="password" id="sNewPass" placeholder="yangi parol (kamida 4 belgi)"></div>
+    Promise.all([Promise.resolve(), renderContactSettings()]).then(([, contactPanel]) => {
+      topbarActions.innerHTML = '';
+      content.innerHTML = `
+        <div class="panel" style="max-width:560px">
+          <div class="panel-header"><h3>Login va parolni o'zgartirish</h3></div>
+          <div class="panel-body">
+            <div class="hint">Parolni o'zgartirish uchun joriy parolni kiritish shart. Yangi login oldingi login o'rniga o'tadi.</div>
+            <div class="form-group"><label>Joriy parol *</label><input type="password" id="sCurPass" placeholder="Hozirgi parolingiz"></div>
+            <div class="form-grid">
+              <div class="form-group"><label>Yangi login</label><input id="sUser" placeholder="yangi login (kiritmasangiz o'zgarmaydi)"></div>
+              <div class="form-group"><label>Yangi parol</label><input type="password" id="sNewPass" placeholder="yangi parol (kamida 4 belgi)"></div>
+            </div>
+            <button class="btn btn-primary" id="saveSettingsBtn">Saqlash</button>
           </div>
-          <button class="btn btn-primary" id="saveSettingsBtn">Saqlash</button>
         </div>
-      </div>`;
+        ${contactPanel}`;
 
-    document.getElementById('saveSettingsBtn').addEventListener('click', async () => {
-      const btn = document.getElementById('saveSettingsBtn');
-      btn.disabled = true;
-      try {
-        const body = { currentPassword: document.getElementById('sCurPass').value };
-        const newUser = document.getElementById('sUser').value.trim();
-        const newPass = document.getElementById('sNewPass').value;
-        if (newUser) body.username = newUser;
-        if (newPass) body.newPassword = newPass;
-        await API.post('/api/auth/update', body);
-        toast('Ma\'lumotlar saqlandi');
-        localStorage.removeItem('token');
-        localStorage.removeItem('role');
-        localStorage.removeItem('fullName');
-        setTimeout(() => { window.location.href = '/login.html'; }, 900);
-      } catch (e) {
-        toast(e.message, 'error');
-        btn.disabled = false;
-      }
+      document.getElementById('saveSettingsBtn').addEventListener('click', async () => {
+        const btn = document.getElementById('saveSettingsBtn');
+        btn.disabled = true;
+        try {
+          const body = { currentPassword: document.getElementById('sCurPass').value };
+          const newUser = document.getElementById('sUser').value.trim();
+          const newPass = document.getElementById('sNewPass').value;
+          if (newUser) body.username = newUser;
+          if (newPass) body.newPassword = newPass;
+          await API.post('/api/auth/update', body);
+          toast('Ma\'lumotlar saqlandi');
+          localStorage.removeItem('token');
+          localStorage.removeItem('role');
+          localStorage.removeItem('fullName');
+          setTimeout(() => { window.location.href = '/login.html'; }, 900);
+        } catch (e) {
+          toast(e.message, 'error');
+          btn.disabled = false;
+        }
+      });
+
+      document.getElementById('saveContactBtn').addEventListener('click', async () => {
+        const btn = document.getElementById('saveContactBtn');
+        btn.disabled = true;
+        try {
+          await API.put('/api/settings', {
+            phone: document.getElementById('sPhone').value.trim(),
+            telegram: document.getElementById('sTelegram').value.trim(),
+            instagram: document.getElementById('sInstagram').value.trim(),
+          });
+          toast('Bog\'lanish ma\'lumotlari saqlandi');
+initContact('contactLinks');
+          initContact('contactTop');
+        } catch (e) {
+          toast(e.message, 'error');
+        } finally {
+          btn.disabled = false;
+        }
+      });
     });
   }
 
@@ -764,6 +788,157 @@
     localStorage.removeItem('fullName');
     window.location.href = '/login.html';
   });
+
+  // ---------- KONTAKT (sozlamalar) ----------
+  async function renderContactSettings() {
+    const s = await API.get('/api/settings');
+    return `
+      <div class="panel" style="max-width:560px">
+        <div class="panel-header"><h3>Bog'lanish ma'lumotlari</h3></div>
+        <div class="panel-body">
+          <div class="hint">Bu ma'lumotlar barcha panelarda (login sahifasi, o'quvchilar, ota-onalar, o'qituvchilar) ko'rinadi.</div>
+          <div class="form-grid">
+            <div class="form-group"><label>Telefon raqam</label><input id="sPhone" value="${escapeHtml(s.phone)}" placeholder="+998 90 123 45 67"></div>
+            <div class="form-group"><label>Telegram</label><input id="sTelegram" value="${escapeHtml(s.telegram)}" placeholder="@lider_club yoki https://t.me/..."></div>
+            <div class="form-group"><label>Instagram</label><input id="sInstagram" value="${escapeHtml(s.instagram)}" placeholder="@olim_lider yoki https://instagram.com/..."></div>
+          </div>
+          <button class="btn btn-primary" id="saveContactBtn">Saqlash</button>
+        </div>
+      </div>`;
+  }
+
+  // ---------- O'QITUVCHILAR ----------
+  async function renderTeachers() {
+    const teachers = await API.get('/api/teachers');
+    const classes = [...new Set((await loadStudents(true)).map((s) => s.className).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'uz'));
+
+    topbarActions.innerHTML = `<div class="toolbar">
+      <button class="btn btn-primary" onclick="window.appTeacherModal()">${ICONS.students.replace('width="18"', 'width="16"')} O'qituvchi qo'shish</button>
+    </div>`;
+
+    if (!teachers.length) {
+      content.innerHTML = `<div class="panel"><div class="empty-state"><h4>Hali o'qituvchilar yo'q</h4><p class="muted">Birinchi o'qituvchini qo'shing — unga fan va sinflar biriktirasiz.</p></div></div>`;
+      return;
+    }
+
+    const rows = teachers.map((t) => `
+      <tr>
+        <td><div class="name">${escapeHtml(t.fullName)}</div><div class="sub">Login: ${escapeHtml(t.username || '—')}</div></td>
+        <td>${(t.subjects || []).map((s) => `<span class="badge badge-blue" style="margin:2px">${escapeHtml(s)}</span>`).join('') || '—'}</td>
+        <td>${(t.classes || []).map((c) => `<span class="badge badge-purple" style="margin:2px">${escapeHtml(c)}</span>`).join('') || '—'}</td>
+        <td class="actions">
+          <button class="btn btn-outline btn-sm" onclick="window.appTeacherCred(${t.id})">Kirish ma'lumotlari</button>
+          <button class="btn btn-outline btn-sm" onclick="window.appTeacherModal(${t.id})">Tahrirlash</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="window.appDelTeacher(${t.id})">O'chirish</button>
+        </td>
+      </tr>`).join('');
+
+    content.innerHTML = `<div class="panel"><div class="table-wrap"><table>
+      <thead><tr><th>O'qituvchi</th><th>Fanlari</th><th>Sinflari</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div></div>`;
+  }
+
+  async function teacherModal(id) {
+    const teachers = await API.get('/api/teachers');
+    const t = id != null ? teachers.find((x) => x.id === id) : null;
+    const classes = [...new Set((await loadStudents(true)).map((s) => s.className).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'uz'));
+
+    const subjBoxes = SUBJECTS.map((s) => `<label class="chip"><input type="checkbox" class="t-subj" value="${escapeHtml(s)}" ${t && t.subjects.includes(s) ? 'checked' : ''}> ${escapeHtml(s)}</label>`).join('');
+    const classBoxes = classes.length
+      ? classes.map((c) => `<label class="chip"><input type="checkbox" class="t-class" value="${escapeHtml(c)}" ${t && t.classes.includes(c) ? 'checked' : ''}> ${escapeHtml(c)}</label>`).join('')
+      : '<span class="muted">Avval o\'quvchilar qo\'shilsin — sinflar shu yerda paydo bo\'ladi.</span>';
+
+    showModal(`
+      <div class="modal-title">${t ? "O'qituvchini tahrirlash" : "Yangi o'qituvchi"}</div>
+      <div class="form-group"><label>To'liq ismi *</label><input id="tName" value="${escapeHtml((t && t.fullName) || '')}" placeholder="Masalan: Sobirov Aziz Olimovich"></div>
+      <div class="form-group"><label>Fanlari</label><div class="chip-group">${subjBoxes}</div></div>
+      <div class="form-group"><label>Sinflari</label><div class="chip-group">${classBoxes}</div></div>
+      <div class="form-grid">
+        <div class="form-group"><label>Login (bo'masa avtomatik)</label><input id="tUser" value="${escapeHtml((t && t.username) || '')}" placeholder="ixtiyoriy"></div>
+        <div class="form-group"><label>Parol (bo'masa avtomatik)</label><input id="tPass" placeholder="kamida 4 belgi"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="window.appCloseModal()">Bekor qilish</button>
+        <button class="btn btn-primary" id="tSave">${t ? 'Saqlash' : "Qo'shish"}</button>
+      </div>`);
+
+    if (t) {
+      const userInput = document.getElementById('tUser');
+      userInput.addEventListener('input', () => {});
+    }
+
+    document.getElementById('tSave').addEventListener('click', async () => {
+      const fullName = document.getElementById('tName').value.trim();
+      if (!fullName) return toast("Ism kiritilmagаn", 'error');
+      const subjects = [...document.querySelectorAll('.t-subj:checked')].map((x) => x.value);
+      const classesSel = [...document.querySelectorAll('.t-class:checked')].map((x) => x.value);
+      const body = { fullName, subjects, classes: classesSel };
+      const username = document.getElementById('tUser').value.trim();
+      const password = document.getElementById('tPass').value;
+      try {
+        if (t) {
+          await API.put('/api/teachers/' + t.id, body);
+          toast('Saqlanmаy');
+        } else {
+          if (username) body.username = username;
+          if (password) body.password = password;
+          const r = await API.post('/api/teachers', body);
+          closeModal();
+          showTeacherCredentials(r);
+        }
+        await renderTeachers();
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    });
+  }
+
+  function showTeacherCredentials(data) {
+    showModal(`
+      <div class="modal-title">Yangi o'qituvchi tayyor</div>
+      <div class="cred-card">
+        <div class="cred-row"><span>Login</span><div><code id="credU">${escapeHtml(data.username)}</code><button class="btn btn-ghost btn-sm" onclick="window.appCopyTxt('credU')">Nusxa</button></div></div>
+        <div class="cred-row"><span>Parol</span><div><code id="credP">${escapeHtml(data.password)}</code><button class="btn btn-ghost btn-sm" onclick="window.appCopyTxt('credP')">Nusxa</button></div></div>
+      </div>
+      <div class="hint">Ma'lumotni o'qituvchiga yetkazing — u teacher paneliga shular bilan kiradi.</div>
+      <div class="modal-actions"><button class="btn btn-primary" onclick="window.appCloseModal()">Yopish</button></div>`);
+  }
+
+  async function teacherCred(id) {
+    const teachers = await API.get('/api/teachers');
+    const t = teachers.find((x) => x.id === id);
+    if (!t) return;
+    showModal(`
+      <div class="modal-title">Kirish ma'lumotlari</div>
+      <div class="form-group"><label>Login</label><div style="display:flex;gap:8px"><code id="tcU" style="flex:1">${escapeHtml(t.username || '')}</code><button class="btn btn-ghost btn-sm" onclick="window.appCopyTxt('tcU')">Nusxa</button></div></div>
+      <div class="form-group"><label>Parol</label><div class="hint">Eski parolni ko'rish mumkin emas. "Yangi parol" tugmasi yangisini yaratib ko'rsatadi.</div></div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="window.appCloseModal()">Bekor</button>
+        <button class="btn btn-primary" id="tcRegen">Yangi parol yaratish</button>
+      </div>`);
+    document.getElementById('tcRegen').addEventListener('click', async () => {
+      try {
+        const r = await API.post('/api/teachers/' + t.id + '/credentials', {});
+        showModal(`
+          <div class="modal-title">Yangi parol tayyor</div>
+          <div class="cred-card">
+            <div class="cred-row"><span>Login</span><div><code id="credU">${escapeHtml(r.username)}</code><button class="btn btn-ghost btn-sm" onclick="window.appCopyTxt('credU')">Nusxa</button></div></div>
+            <div class="cred-row"><span>Parol</span><div><code id="credP">${escapeHtml(r.password)}</code><button class="btn btn-ghost btn-sm" onclick="window.appCopyTxt('credP')">Nusxa</button></div></div>
+          </div>
+          <div class="modal-actions"><button class="btn btn-primary" onclick="window.appCloseModal()">Yopish</button></div>`);
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    });
+  }
+
+  async function deleteTeacher(id) {
+    if (!confirm('O\'qituvchini va uning hisobini o\'chirasizmi?')) return;
+    await API.del('/api/teachers/' + id);
+    toast("O'qituvchi o'chirildi");
+    await renderTeachers();
+  }
 
   // ---------- Global funksiyalar ----------
   window.appNav = (s) => {
@@ -796,6 +971,14 @@
   window.appOpenClass = (name) => openClass(name);
   window.appDeleteClass = (name) => deleteClass(name);
   window.appParentCred = (id) => parentCred(id);
+  window.appTeacherModal = (id) => teacherModal(id);
+  window.appTeacherCred = (id) => teacherCred(id);
+  window.appDelTeacher = (id) => deleteTeacher(id);
+  window.appCopyTxt = (id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    navigator.clipboard.writeText(el.textContent.trim()).then(() => toast('Nusxalandi'));
+  };
   window.appExportWord = async () => {
     const className = classFilter || '';
     const target = className || 'barcha_sinflar';
@@ -829,5 +1012,7 @@
   let _setAttInProgress = false;
 
   // start
+initContact('contactLinks');
+  initContact('contactTop');
   navigateTo('dashboard');
 })();

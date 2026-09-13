@@ -165,5 +165,7 @@
   });
 
   let rows = [];
+  initContact('contactLinks');
+  initContact('contactTop');
   render();
 })();

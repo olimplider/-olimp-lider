@@ -88,7 +88,38 @@ const ICONS = {
   logout: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
   user: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
   doc: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+  phone: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+  telegram: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21.94 3.76a1.5 1.5 0 0 0-2-.93L2.9 10.6a1.3 1.3 0 0 0 .14 2.48l4.44 1.4 1.7 5.35a1.3 1.3 0 0 0 2.23.5l2.5-2.5 4.53 3.34a1.3 1.3 0 0 0 2-.93l3.5-16.9a1.5 1.5 0 0 0 0-.58zM8.6 13.36l9.6-6.54c.28-.19.55.15.34.42l-7.36 7.74-1.12 4.07-1.46-5.7z"/></svg>',
+  instagram: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>',
 };
+
+function contactHtml(s) {
+  if (!s) return '';
+  const links = [];
+  if (s.phone) links.push('<a class="contact-link" href="tel:' + escapeHtml(s.phone.replace(/[^+\d]/g, '')) + '">' + ICONS.phone + '<span>' + escapeHtml(s.phone) + '</span></a>');
+  if (s.telegram) links.push('<a class="contact-link" href="' + escapeHtml(fullUrl(s.telegram, 'https://t.me/')) + '" target="_blank" rel="noopener">' + ICONS.telegram + '<span>Telegram</span></a>');
+  if (s.instagram) links.push('<a class="contact-link" href="' + escapeHtml(fullUrl(s.instagram, 'https://instagram.com/')) + '" target="_blank" rel="noopener">' + ICONS.instagram + '<span>Instagram</span></a>');
+  if (!links.length) return '';
+  return '<div class="contact-links">' + links.join('') + '</div>';
+}
+
+function fullUrl(v, prefix) {
+  const t = String(v).trim();
+  if (/^https?:\/\//i.test(t)) return t;
+  return prefix + t.replace(/^@/, '');
+}
+
+async function initContact(containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  try {
+    const res = await fetch('/api/settings');
+    const s = await res.json();
+    el.innerHTML = contactHtml(s);
+  } catch (e) {
+    el.innerHTML = '';
+  }
+}
 
 const SUBJECTS = [
   'Matematika', 'Ona tili', 'Adabiyot', 'Fizika', 'Kimyo',

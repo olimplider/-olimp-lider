@@ -3,7 +3,8 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
-const COLLECTIONS = ['students', 'users', 'payments', 'attendance', 'grades'];
+const COLLECTIONS = ['students', 'users', 'payments', 'attendance', 'grades', 'teachers', 'tests', 'settings'];
+const OBJECT_COLLECTIONS = ['settings'];
 
 const store = {
   students: [],
@@ -11,6 +12,9 @@ const store = {
   payments: [],
   attendance: [],
   grades: [],
+  teachers: [],
+  tests: [],
+  settings: {},
 };
 
 // ---------- Saqlash rejimi ----------
@@ -50,13 +54,15 @@ function loadCollectionFile(name) {
   const file = fileFor(name);
   if (fs.existsSync(file)) {
     try {
-      return JSON.parse(fs.readFileSync(file, 'utf8'));
+      const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (name === 'settings') return raw && typeof raw === 'object' ? raw : {};
+      return Array.isArray(raw) ? raw : [];
     } catch (e) {
       console.error(`"${name}.json" o'qishda xato:`, e.message);
-      return [];
+      return OBJECT_COLLECTIONS.includes(name) ? {} : [];
     }
   }
-  return [];
+  return OBJECT_COLLECTIONS.includes(name) ? {} : [];
 }
 
 function saveCollectionFile(name) {
@@ -70,7 +76,11 @@ async function loadAllFromPostgres() {
   const res = await pool.query('SELECT key, value FROM app_kv');
   for (const row of res.rows) {
     if (COLLECTIONS.includes(row.key)) {
-      store[row.key] = Array.isArray(row.value) ? row.value : [];
+      if (OBJECT_COLLECTIONS.includes(row.key)) {
+        store[row.key] = row.value && typeof row.value === 'object' ? row.value : {};
+      } else {
+        store[row.key] = Array.isArray(row.value) ? row.value : [];
+      }
     }
   }
 }
@@ -80,7 +90,7 @@ function saveCollectionPostgres(name) {
     .then(() =>
       pool.query(
         'INSERT INTO app_kv (key, value) VALUES ($1, $2::jsonb) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value',
-        [name, JSON.stringify(store[name] || [])]
+        [name, JSON.stringify(store[name] || (OBJECT_COLLECTIONS.includes(name) ? {} : []))]
       )
     )
     .catch((e) => console.error(`"${name}" saqlashda xato:`, e.message));

@@ -33,7 +33,7 @@ const upload = multer({
 
 function signToken(user) {
   return jwt.sign(
-    { id: user.id, username: user.username, role: user.role, studentId: user.studentId || null },
+    { id: user.id, username: user.username, role: user.role, studentId: user.studentId || null, teacherId: user.teacherId || null },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -87,13 +87,13 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(401).json({ error: 'Login yoki parol noto`g`ri' });
   }
   const token = signToken(user);
-  res.json({ token, role: user.role, fullName: user.fullName, studentId: user.studentId || null });
+  res.json({ token, role: user.role, fullName: user.fullName, studentId: user.studentId || null, teacherId: user.teacherId || null });
 });
 
 app.get('/api/auth/me', authRequired, (req, res) => {
   const user = db.store.users.find((u) => u.id === req.user.id);
   if (!user) return res.status(404).json({ error: 'Foydalanuvchi topilmadi' });
-  res.json({ id: user.id, username: user.username, role: user.role, fullName: user.fullName, studentId: user.studentId || null });
+  res.json({ id: user.id, username: user.username, role: user.role, fullName: user.fullName, studentId: user.studentId || null, teacherId: user.teacherId || null });
 });
 
 // ---------- Admin sozlamalari (login/parolni o'zgartirish) ----------
@@ -121,6 +121,355 @@ app.post('/api/auth/update', authRequired, (req, res) => {
 
   db.saveCollection('users');
   res.json({ ok: true, username: user.username });
+});
+
+// ---------- Kontakt sozlamalari ----------
+app.get('/api/settings', (req, res) => {
+  const s = db.store.settings || {};
+  res.json({ phone: s.phone || '', telegram: s.telegram || '', instagram: s.instagram || '' });
+});
+
+app.put('/api/settings', authRequired, adminOnly, (req, res) => {
+  const s = db.store.settings || {};
+  const b = req.body || {};
+  for (const k of ['phone', 'telegram', 'instagram']) {
+    if (b[k] !== undefined) s[k] = String(b[k]).trim();
+  }
+  db.store.settings = s;
+  db.saveCollection('settings');
+  res.json({ ok: true });
+});
+
+// ---------- O'qituvchilar ----------
+function teacherOnly(req, res, next) {
+  if (req.user.role !== 'teacher') return res.status(403).json({ error: 'Ruxsat yo`q' });
+  next();
+}
+
+function currentTeacher(req) {
+  return db.store.teachers.find((t) => t.id === req.user.teacherId);
+}
+
+function canClass(teacher, className) {
+  return teacher && teacher.classes && teacher.classes.includes(className);
+}
+
+app.get('/api/teachers', authRequired, adminOnly, (req, res) => {
+  const list = db.store.teachers.map((t) => {
+    const user = db.store.users.find((u) => u.teacherId === t.id);
+    return { ...t, username: user ? user.username : null };
+  });
+  res.json(list);
+});
+
+app.get('/api/teacher/me', authRequired, teacherOnly, (req, res) => {
+  const teacher = currentTeacher(req);
+  if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+  res.json({ teacher, user: { fullName: req.user.fullName, username: req.user.username } });
+});
+
+app.post('/api/teachers', authRequired, adminOnly, (req, res) => {
+  const b = req.body || {};
+  const fullName = String(b.fullName || '').trim();
+  if (!fullName) return res.status(400).json({ error: 'To`liq ism majburiy' });
+
+  const teacher = {
+    id: db.nextId('teachers'),
+    fullName,
+    subjects: (Array.isArray(b.subjects) ? b.subjects : []).map((s) => String(s).trim()).filter(Boolean),
+    classes: (Array.isArray(b.classes) ? b.classes : []).map((s) => String(s).trim()).filter(Boolean),
+    createdAt: new Date().toISOString(),
+  };
+  db.store.teachers.push(teacher);
+
+  let username = b.username ? String(b.username).trim().toLowerCase() : makeUsername(fullName.split(' ')[0], fullName.split(' ')[1] || '');
+  username = ensureUniqueUsername(username || makeUsername('oquituvchi', String(teacher.id)));
+  const password = b.password && String(b.password).length >= 4 ? String(b.password) : makePassword(8);
+
+  const user = {
+    id: db.nextId('users'),
+    username,
+    passwordHash: db.hashPassword(password),
+    role: 'teacher',
+    fullName,
+    teacherId: teacher.id,
+    studentId: null,
+  };
+  db.store.users.push(user);
+
+  db.saveCollection('teachers');
+  db.saveCollection('users');
+  res.status(201).json({ ok: true, teacher, username, password });
+});
+
+app.post('/api/teachers/:id/credentials', authRequired, adminOnly, (req, res) => {
+  const teacher = db.store.teachers.find((t) => t.id === Number(req.params.id));
+  if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+
+  let user = db.store.users.find((u) => u.teacherId === teacher.id);
+  if (!user) {
+    const base = makeUsername(teacher.fullName.split(' ')[0], teacher.fullName.split(' ')[1] || '');
+    user = {
+      id: db.nextId('users'),
+      username: ensureUniqueUsername(base || 'oquituvchi'),
+      passwordHash: null,
+      role: 'teacher',
+      fullName: teacher.fullName,
+      teacherId: teacher.id,
+    };
+    db.store.users.push(user);
+  }
+
+  const b = req.body || {};
+  if (b.username && String(b.username).trim()) {
+    const uname = String(b.username).trim().toLowerCase();
+    const taken = db.store.users.find((u) => u.username === uname && u.id !== user.id);
+    if (taken) return res.status(400).json({ error: 'Bu login band, boshqasini tanlang' });
+    user.username = uname;
+  }
+
+  if (b.password) {
+    if (String(b.password).length < 4) return res.status(400).json({ error: 'Parol kamida 4 ta belgi' });
+    user.passwordHash = db.hashPassword(String(b.password));
+  } else {
+    user.passwordHash = db.hashPassword(makePassword(8));
+  }
+
+  db.saveCollection('users');
+  res.json({ username: user.username, password: b.password ? String(b.password) : undefined, fresh: !b.password });
+});
+
+app.put('/api/teachers/:id', authRequired, adminOnly, (req, res) => {
+  const teacher = db.store.teachers.find((t) => t.id === Number(req.params.id));
+  if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+  const b = req.body || {};
+  if (b.fullName !== undefined) teacher.fullName = String(b.fullName).trim();
+  if (b.subjects !== undefined) teacher.subjects = (Array.isArray(b.subjects) ? b.subjects : []).map((s) => String(s).trim()).filter(Boolean);
+  if (b.classes !== undefined) teacher.classes = (Array.isArray(b.classes) ? b.classes : []).map((s) => String(s).trim()).filter(Boolean);
+  const user = db.store.users.find((u) => u.teacherId === teacher.id);
+  if (user) user.fullName = teacher.fullName;
+  db.saveCollection('teachers');
+  db.saveCollection('users');
+  res.json({ ok: true });
+});
+
+app.delete('/api/teachers/:id', authRequired, adminOnly, (req, res) => {
+  const id = Number(req.params.id);
+  db.store.teachers = db.store.teachers.filter((t) => t.id !== id);
+  db.store.users = db.store.users.filter((u) => !(u.role === 'teacher' && u.teacherId === id));
+  db.store.tests = db.store.tests.filter((t) => t.teacherId !== id);
+  db.saveAll();
+  res.json({ ok: true });
+});
+
+// ---------- O'qituvchi: sinf o'quvchilari ----------
+app.get('/api/teacher/students', authRequired, teacherOnly, (req, res) => {
+  const teacher = currentTeacher(req);
+  if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+  const className = String(req.query.className || '').trim();
+  if (!canClass(teacher, className)) return res.status(403).json({ error: 'Bu sinf sizga biriktirilmagan' });
+  const list = db.store.students.filter((s) => (s.className || '(sinsiz)') === className);
+  res.json(list);
+});
+
+// ---------- O'qituvchi: baholar ----------
+app.get('/api/teacher/grades', authRequired, teacherOnly, (req, res) => {
+  const teacher = currentTeacher(req);
+  if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+  const className = String(req.query.className || '').trim();
+  const subject = String(req.query.subject || '').trim();
+  const date = String(req.query.date || '').trim();
+  if (!canClass(teacher, className)) return res.status(403).json({ error: 'Bu sinf sizga biriktirilmagan' });
+
+  const ids = new Set(db.store.students.filter((s) => (s.className || '(sinsiz)') === className).map((s) => s.id));
+  const list = db.store.grades.filter((g) => ids.has(g.studentId) && (!subject || g.subject === subject) && (!date || g.date === date));
+  res.json(list);
+});
+
+app.post('/api/teacher/grades/bulk', authRequired, teacherOnly, (req, res) => {
+  const teacher = currentTeacher(req);
+  if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+  const b = req.body || {};
+  const date = String(b.date || new Date().toISOString().slice(0, 10));
+  const subject = String(b.subject || '').trim();
+  if (!b.className || !subject || !Array.isArray(b.scores)) return res.status(400).json({ error: 'Ma`lumot to`liq emas' });
+  if (!canClass(teacher, b.className)) return res.status(403).json({ error: 'Bu sinf sizga biriktirilmagan' });
+  if (!teacher.subjects.includes(subject)) return res.status(403).json({ error: 'Bu fan sizga biriktirilmagan' });
+
+  const ids = new Set(db.store.students.filter((s) => (s.className || '(sinsiz)') === b.className).map((s) => s.id));
+  let count = 0;
+  for (const rec of b.scores) {
+    const score = Number(rec.score);
+    if (!ids.has(Number(rec.studentId)) || !(score >= 1 && score <= 5)) continue;
+    const existing = db.store.grades.find((g) => g.studentId === Number(rec.studentId) && g.subject === subject && g.date === date);
+    if (existing) existing.score = score;
+    else db.store.grades.push({ id: db.nextId('grades'), studentId: Number(rec.studentId), subject, score, date });
+    count++;
+  }
+  db.saveCollection('grades');
+  res.json({ ok: true, count });
+});
+
+// ---------- O'qituvchi: davomat ----------
+app.get('/api/teacher/attendance', authRequired, teacherOnly, (req, res) => {
+  const teacher = currentTeacher(req);
+  if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+  const date = String(req.query.date || '').trim();
+  const className = String(req.query.className || '').trim();
+  if (!date || !canClass(teacher, className)) return res.status(403).json({ error: 'Ruxsat yo`q' });
+  const ids = new Set(db.store.students.filter((s) => (s.className || '(sinsiz)') === className).map((s) => s.id));
+  res.json(db.store.attendance.filter((a) => a.date === date && ids.has(a.studentId)));
+});
+
+app.post('/api/teacher/attendance/bulk', authRequired, teacherOnly, (req, res) => {
+  const teacher = currentTeacher(req);
+  if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+  const b = req.body || {};
+  const date = String(b.date || '').trim();
+  if (!date || !b.className || !Array.isArray(b.records)) return res.status(400).json({ error: 'Ma`lumot to`liq emas' });
+  if (!canClass(teacher, b.className)) return res.status(403).json({ error: 'Bu sinf sizga biriktirilmagan' });
+
+  const ids = new Set(db.store.students.filter((s) => (s.className || '(sinsiz)') === b.className).map((s) => s.id));
+  let count = 0;
+  for (const rec of b.records) {
+    const status = rec.status;
+    if (!ids.has(Number(rec.studentId)) || !['present', 'absent', 'late'].includes(status)) continue;
+    const existing = db.store.attendance.find((a) => a.studentId === Number(rec.studentId) && a.date === date);
+    if (existing) existing.status = status;
+    else db.store.attendance.push({ id: db.nextId('attendance'), studentId: Number(rec.studentId), date, status });
+    count++;
+  }
+  db.saveCollection('attendance');
+  res.json({ ok: true, count });
+});
+
+// ---------- Nazorat topshiriqlari ----------
+app.get('/api/tests', authRequired, (req, res) => {
+  const className = String(req.query.className || '').trim();
+  let list = db.store.tests;
+  if (req.user.role === 'teacher') list = list.filter((t) => t.teacherId === req.user.teacherId);
+  if (className) list = list.filter((t) => t.className === className);
+  list = list
+    .map((t) => ({ ...t, resultsCount: Array.isArray(t.results) ? t.results.length : 0 }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  res.json(list);
+});
+
+app.post('/api/tests', authRequired, (req, res) => {
+  let teacher = null;
+  if (req.user.role === 'teacher') {
+    teacher = currentTeacher(req);
+    if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+  }
+  const b = req.body || {};
+  const title = String(b.title || '').trim();
+  const className = String(b.className || '').trim();
+  const subject = String(b.subject || '').trim();
+  if (!title || !className || !subject) return res.status(400).json({ error: 'Ma`lumot to`liq emas' });
+  if (teacher && !canClass(teacher, className)) return res.status(403).json({ error: 'Bu sinf sizga biriktirilmagan' });
+
+  db.store.tests.push({
+    id: db.nextId('tests'),
+    title,
+    className,
+    subject,
+    teacherId: teacher ? teacher.id : null,
+    date: b.date || new Date().toISOString().slice(0, 10),
+    maxScore: Number(b.maxScore) || 100,
+    results: Array.isArray(b.results) ? b.results : [],
+    createdAt: new Date().toISOString(),
+  });
+  db.saveCollection('tests');
+  res.status(201).json({ ok: true });
+});
+
+app.put('/api/tests/:id/results', authRequired, (req, res) => {
+  const test = db.store.tests.find((t) => t.id === Number(req.params.id));
+  if (!test) return res.status(404).json({ error: 'Nazorat topilmadi' });
+  if (req.user.role === 'teacher' && test.teacherId !== req.user.teacherId) {
+    return res.status(403).json({ error: 'Bu nazorat sizga tegishli emas' });
+  }
+  const results = (req.body || {}).results;
+  if (!Array.isArray(results)) return res.status(400).json({ error: 'Natijalar kiritilmagan' });
+  for (const r of results) {
+    const score = Number(r.score);
+    const idx = test.results.findIndex((x) => x.studentId === Number(r.studentId));
+    if (idx >= 0) test.results[idx].score = score;
+    else test.results.push({ studentId: Number(r.studentId), score });
+  }
+  db.saveCollection('tests');
+  res.json({ ok: true });
+});
+
+app.delete('/api/tests/:id', authRequired, (req, res) => {
+  const test = db.store.tests.find((t) => t.id === Number(req.params.id));
+  if (!test) return res.status(404).json({ error: 'Nazorat topilmadi' });
+  if (req.user.role === 'teacher' && test.teacherId !== req.user.teacherId) {
+    return res.status(403).json({ error: 'Bu nazorat sizga tegishli emas' });
+  }
+  db.store.tests = db.store.tests.filter((t) => t.id !== Number(req.params.id));
+  db.saveCollection('tests');
+  res.json({ ok: true });
+});
+
+// ---------- O'qituvchi: oylik statistika ----------
+app.get('/api/teacher/stats', authRequired, teacherOnly, (req, res) => {
+  const teacher = currentTeacher(req);
+  if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+  const month = Number(req.query.month) || new Date().getMonth() + 1;
+  const year = Number(req.query.year) || new Date().getFullYear();
+  const prefix = `${year}-${String(month).padStart(2, '0')}`;
+
+  const byClass = {};
+  const perStudent = [];
+  const subjectMap = {};
+
+  for (const className of teacher.classes) {
+    const studs = db.store.students.filter((s) => (s.className || '(sinsiz)') === className);
+    const ids = new Set(studs.map((s) => s.id));
+    const classGrades = db.store.grades.filter((g) => ids.has(g.studentId) && g.date.startsWith(prefix));
+    const classAtt = db.store.attendance.filter((a) => ids.has(a.studentId) && a.date.startsWith(prefix));
+    const classTests = db.store.tests.filter((t) => t.className === className && t.date.startsWith(prefix));
+    const classStudentGrades = db.store.grades.filter((g) => ids.has(g.studentId));
+
+    const avg = classGrades.length ? classGrades.reduce((a, b) => a + b.score, 0) / classGrades.length : null;
+    byClass[className] = {
+      className,
+      count: studs.length,
+      gradesCount: classGrades.length,
+      testsCount: classTests.length,
+      avg: avg ? Number(avg.toFixed(2)) : null,
+      present: classAtt.filter((a) => a.status === 'present').length,
+      absent: classAtt.filter((a) => a.status === 'absent').length,
+      late: classAtt.filter((a) => a.status === 'late').length,
+    };
+
+    for (const s of studs) {
+      const g = classStudentGrades.filter((x) => x.studentId === s.id);
+      const sAvg = g.length ? g.reduce((a, b) => a + b.score, 0) / g.length : null;
+      perStudent.push({ id: s.id, fullName: `${s.lastName} ${s.firstName}`, className, avg: sAvg ? Number(sAvg.toFixed(2)) : null, count: g.length });
+    }
+    for (const g of classGrades) {
+      if (!subjectMap[g.subject]) subjectMap[g.subject] = [];
+      subjectMap[g.subject].push(g.score);
+    }
+  }
+
+  const subjects = Object.entries(subjectMap).map(([subject, arr]) => {
+    const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
+    return { subject, avg: Number(avg.toFixed(2)), count: arr.length };
+  });
+
+  for (const className of Object.keys(byClass)) {
+    for (const p of perStudent) if (p.className === className) {
+      const t = db.store.tests.filter((x) => x.className === className && x.date.startsWith(prefix));
+      p.testAvg = null;
+    }
+  }
+
+  const topStudents = perStudent.filter((p) => p.avg !== null).sort((a, b) => b.avg - a.avg).slice(0, 5);
+
+  res.json({ month, year, classes: Object.values(byClass), subjects, perStudent, topStudents });
 });
 
 // ---------- O'quvchilar ----------

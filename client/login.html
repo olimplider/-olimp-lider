@@ -27,13 +27,17 @@
         </div>
         <button type="submit" id="loginBtn" class="btn btn-primary btn-block">Kirish</button>
       </form>
+      <div id="contactLine" style="margin-top:16px"></div>
     </div>
   </div>
   <script src="/js/api.js"></script>
   <script>
+    initContact('contactLine');
+
+    const roleOf = (role) => (role === 'admin' ? '/admin.html' : role === 'teacher' ? '/teacher.html' : '/parent.html');
     if (API.getToken()) {
       const role = API.getRole();
-      window.location.href = role === 'admin' ? '/admin.html' : '/parent.html';
+      window.location.href = roleOf(role);
     }
 
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
@@ -58,7 +62,7 @@
         API.setToken(data.token);
         localStorage.setItem('role', data.role);
         localStorage.setItem('fullName', data.fullName || '');
-        window.location.href = data.role === 'admin' ? '/admin.html' : '/parent.html';
+        window.location.href = roleOf(data.role);
       } catch (err) {
         errorBox.textContent = err.message;
         errorBox.style.display = 'block';
