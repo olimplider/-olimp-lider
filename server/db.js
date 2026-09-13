@@ -115,6 +115,10 @@ function nextId(collectionName) {
   return items.length ? Math.max(...items.map((i) => i.id)) + 1 : 1;
 }
 
+function flushWrites() {
+  return writeQueue;
+}
+
 function hashPassword(pw) {
   return bcrypt.hashSync(pw, 10);
 }
@@ -143,6 +147,7 @@ module.exports = {
   loadAll,
   saveAll,
   saveCollection,
+  flushWrites,
   nextId,
   hashPassword,
   verifyPassword,

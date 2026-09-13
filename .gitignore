@@ -2,5 +2,9 @@ node_modules/
 uploads/
 data/
 .env
+.env.local
+.neon/
 *.log
 .DS_Store
+.neon
+.env.local
