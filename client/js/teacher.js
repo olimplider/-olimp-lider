@@ -232,14 +232,22 @@
     if (_jBusy || !_jCurrent) return;
     _jBusy = true;
     try {
-      const cur = btn && btn.textContent.trim() !== '' ? Number(btn.textContent.trim()) : 0;
-      const order = [null, 5, 4, 3, 2, 1, null];
-      const idx = order.indexOf(cur);
-      const next = order[idx < 0 ? 0 : Math.min(idx + 1, order.length - 1)];
+      const raw = btn ? btn.textContent.trim() : '';
+      const cur = raw !== '' ? Number(raw) : 0;
+      const seq = [5, 4, 3, 2, 1, null];
+      const idx = seq.indexOf(cur);
+      const next = idx === -1 ? 5 : seq[idx + 1];
       await API.post('/api/teacher/grades/cell', { className: _jCurrent.className, subject: _jCurrent.subject, date, studentId, score: next });
       if (btn) {
         btn.textContent = next === null ? '' : next;
         btn.className = 'jcell ' + (next === null ? 's0' : 's' + next);
+        const row = btn.closest('tr');
+        if (row) {
+          let sum = 0, n = 0;
+          row.querySelectorAll('.jcell').forEach((b) => { const v = Number(b.textContent.trim()); if (v) { sum += v; n++; } });
+          const avgTd = row.querySelector('.javg');
+          if (avgTd) avgTd.textContent = n ? (sum / n).toFixed(1) : '';
+        }
       }
     } catch (e) {
       toast(e.message, 'error');
