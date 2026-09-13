@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OLIMP-LIDER — Kirish</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-card">
+      <div class="insignia">
+        <div class="radar"></div>
+        <img src="/assets/logo.png" class="logo-img" alt="OLIMP-LIDER logotipi">
+      </div>
+      <h1>OLIMP-LIDER</h1>
+      <div class="club-type">Maxsus harbiy sport klubi</div>
+      <div id="errorBox" class="alert-error"></div>
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="username">Login</label>
+          <input type="text" id="username" placeholder="Kirish logini" autocomplete="username" required>
+        </div>
+        <div class="form-group">
+          <label for="password">Parol</label>
+          <input type="password" id="password" placeholder="Parol" autocomplete="current-password" required>
+        </div>
+        <button type="submit" id="loginBtn" class="btn btn-primary btn-block">Kirish</button>
+      </form>
+    </div>
+  </div>
+  <script src="/js/api.js"></script>
+  <script>
+    if (API.getToken()) {
+      const role = API.getRole();
+      window.location.href = role === 'admin' ? '/admin.html' : '/parent.html';
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorBox = document.getElementById('errorBox');
+      const btn = document.getElementById('loginBtn');
+      errorBox.style.display = 'none';
+
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+
+      btn.disabled = true;
+      btn.textContent = 'Tekshirilmoqda...';
+      try {
+        const data = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        }).then((r) => r.json());
+
+        if (!data.token) throw new Error(data.error || 'Xato');
+        API.setToken(data.token);
+        localStorage.setItem('role', data.role);
+        localStorage.setItem('fullName', data.fullName || '');
+        window.location.href = data.role === 'admin' ? '/admin.html' : '/parent.html';
+      } catch (err) {
+        errorBox.textContent = err.message;
+        errorBox.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Kirish';
+      }
+    });
+  </script>
+</body>
+</html>

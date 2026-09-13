@@ -1,0 +1,454 @@
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const db = require('./db');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'maktab-maxfiy-kalit-2026';
+
+const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+app.use(express.json());
+app.use('/uploads', express.static(UPLOAD_DIR));
+
+// ---------- Statik frontend ----------
+const CLIENT_DIR = path.join(__dirname, '..', 'client');
+app.use(express.static(CLIENT_DIR));
+
+app.get('/', (req, res) => res.redirect('/login.html'));
+
+// ---------- Auth ----------
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (/^image\/(jpeg|png|webp|jpg)$/.test(file.mimetype)) cb(null, true);
+    else cb(new Error('Faqat rasm fayllari ruxsat etiladi'));
+  },
+});
+
+function signToken(user) {
+  return jwt.sign(
+    { id: user.id, username: user.username, role: user.role, studentId: user.studentId || null },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+}
+
+function makeUsername(lastName, firstName) {
+  const base =
+    `${lastName}.${firstName}`.toLowerCase().replace(/[^\p{L}\p{N}.-]+/gu, '').slice(0, 24) || 'otaona';
+  return ensureUniqueUsername(base);
+}
+
+function ensureUniqueUsername(username) {
+  let candidate = username;
+  let i = 1;
+  while (db.store.users.some((u) => u.username === candidate)) {
+    candidate = `${username}${i}`;
+    i++;
+  }
+  return candidate;
+}
+
+function makePassword(len) {
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let p = '';
+  for (let i = 0; i < len; i++) p += chars[Math.floor(Math.random() * chars.length)];
+  return p;
+}
+
+function authRequired(req, res, next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Kirish talab qilinadi' });
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch (e) {
+    return res.status(401).json({ error: 'Muddati tugagan yoki noto`g`ri token' });
+  }
+}
+
+function adminOnly(req, res, next) {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Ruxsat yo`q' });
+  next();
+}
+
+// ---------- Auth API ----------
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body || {};
+  const user = db.store.users.find((u) => u.username === String(username || '').toLowerCase());
+  if (!user || !db.verifyPassword(password || '', user.passwordHash)) {
+    return res.status(401).json({ error: 'Login yoki parol noto`g`ri' });
+  }
+  const token = signToken(user);
+  res.json({ token, role: user.role, fullName: user.fullName, studentId: user.studentId || null });
+});
+
+app.get('/api/auth/me', authRequired, (req, res) => {
+  const user = db.store.users.find((u) => u.id === req.user.id);
+  if (!user) return res.status(404).json({ error: 'Foydalanuvchi topilmadi' });
+  res.json({ id: user.id, username: user.username, role: user.role, fullName: user.fullName, studentId: user.studentId || null });
+});
+
+// ---------- Admin sozlamalari (login/parolni o'zgartirish) ----------
+app.post('/api/auth/update', authRequired, (req, res) => {
+  const user = db.store.users.find((u) => u.id === req.user.id);
+  if (!user) return res.status(404).json({ error: 'Foydalanuvchi topilmadi' });
+
+  const { currentPassword, username, newPassword } = req.body || {};
+  if (!db.verifyPassword(currentPassword || '', user.passwordHash)) {
+    return res.status(400).json({ error: 'Joriy parol noto`g`ri' });
+  }
+
+  if (username !== undefined) {
+    const uname = String(username).trim().toLowerCase();
+    if (!uname) return res.status(400).json({ error: 'Login bo`sh bo`lmasin' });
+    const taken = db.store.users.find((u) => u.username === uname && u.id !== user.id);
+    if (taken) return res.status(400).json({ error: 'Bu login band, boshqasini tanlang' });
+    user.username = uname;
+  }
+
+  if (newPassword) {
+    if (String(newPassword).length < 4) return res.status(400).json({ error: 'Parol kamida 4 ta belgi' });
+    user.passwordHash = db.hashPassword(String(newPassword));
+  }
+
+  db.saveCollection('users');
+  res.json({ ok: true, username: user.username });
+});
+
+// ---------- O'quvchilar ----------
+app.get('/api/students', authRequired, adminOnly, (req, res) => {
+  res.json(db.store.students);
+});
+
+app.post('/api/students', authRequired, adminOnly, (req, res) => {
+  const b = req.body || {};
+  if (!b.firstName || !b.lastName) return res.status(400).json({ error: 'Ism va familya majburiy' });
+
+  const student = {
+    id: db.nextId('students'),
+    firstName: String(b.firstName).trim(),
+    lastName: String(b.lastName).trim(),
+    patronymic: String(b.patronymic || '').trim(),
+    className: String(b.className || '').trim(),
+    birthDate: b.birthDate || null,
+    monthlyFee: Number(b.monthlyFee) || 0,
+    address: String(b.address || '').trim(),
+    parentName: String(b.parentName || '').trim(),
+    parentPhone: String(b.parentPhone || '').trim(),
+    photo: null,
+    createdAt: new Date().toISOString(),
+  };
+
+  db.store.students.push(student);
+
+  // Ota-ona uchun login/parolni avtomatik yaratish
+  let parentUsername = b.parentUsername ? String(b.parentUsername).trim().toLowerCase() : null;
+  let parentPassword = b.parentPassword ? String(b.parentPassword) : null;
+  if (!parentUsername) parentUsername = makeUsername(student.lastName, student.firstName);
+  if (!parentPassword || String(parentPassword).length < 4) parentPassword = makePassword(8);
+  parentUsername = ensureUniqueUsername(parentUsername);
+
+  db.store.users.push({
+    id: db.nextId('users'),
+    username: parentUsername,
+    passwordHash: db.hashPassword(parentPassword),
+    role: 'parent',
+    fullName: student.parentName || `${student.firstName} ning ota-onasi`,
+    studentId: student.id,
+  });
+
+  db.saveCollection('students');
+  db.saveCollection('users');
+  res.status(201).json({ ...student, parentUsername, parentPassword });
+});
+
+app.put('/api/students/:id', authRequired, adminOnly, (req, res) => {
+  const student = db.store.students.find((s) => s.id === Number(req.params.id));
+  if (!student) return res.status(404).json({ error: 'O`quvchi topilmadi' });
+  const b = req.body || {};
+  if (b.firstName) student.firstName = String(b.firstName).trim();
+  if (b.lastName) student.lastName = String(b.lastName).trim();
+  if (b.patronymic !== undefined) student.patronymic = String(b.patronymic || '').trim();
+  if (b.className !== undefined) student.className = String(b.className || '').trim();
+  if (b.birthDate !== undefined) student.birthDate = b.birthDate || null;
+  if (b.monthlyFee !== undefined) student.monthlyFee = Number(b.monthlyFee) || 0;
+  if (b.address !== undefined) student.address = String(b.address || '').trim();
+  if (b.parentName !== undefined) student.parentName = String(b.parentName || '').trim();
+  if (b.parentPhone !== undefined) student.parentPhone = String(b.parentPhone || '').trim();
+  db.saveCollection('students');
+  res.json(student);
+});
+
+app.delete('/api/students/:id', authRequired, adminOnly, (req, res) => {
+  const id = Number(req.params.id);
+  db.store.students = db.store.students.filter((s) => s.id !== id);
+  db.store.users = db.store.users.filter((u) => !(u.role === 'parent' && u.studentId === id));
+  db.store.payments = db.store.payments.filter((p) => p.studentId !== id);
+  db.store.attendance = db.store.attendance.filter((a) => a.studentId !== id);
+  db.store.grades = db.store.grades.filter((g) => g.studentId !== id);
+  db.saveAll();
+  res.json({ ok: true });
+});
+
+// ---------- Sinflar ----------
+app.get('/api/classes', authRequired, adminOnly, (req, res) => {
+  const map = {};
+  db.store.students.forEach((s) => {
+    const name = s.className || '(sinsiz)';
+    map[name] = (map[name] || 0) + 1;
+  });
+  const list = Object.entries(map)
+    .map(([name, count]) => ({
+      name,
+      count,
+      totalFee: db.store.students.filter((s) => (s.className || '(sinsiz)') === name).reduce((a, s) => a + (s.monthlyFee || 0), 0),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'uz'));
+  res.json(list);
+});
+
+app.delete('/api/classes/:name', authRequired, adminOnly, (req, res) => {
+  const name = decodeURIComponent(req.params.name);
+  const ids = db.store.students.filter((s) => (s.className || '(sinsiz)') === name).map((s) => s.id);
+  if (!ids.length) return res.status(404).json({ error: 'Sinf topilmadi' });
+
+  db.store.students = db.store.students.filter((s) => !ids.includes(s.id));
+  db.store.users = db.store.users.filter((u) => !(u.role === 'parent' && ids.includes(u.studentId)));
+  db.store.payments = db.store.payments.filter((p) => !ids.includes(p.studentId));
+  db.store.attendance = db.store.attendance.filter((a) => !ids.includes(a.studentId));
+  db.store.grades = db.store.grades.filter((g) => !ids.includes(g.studentId));
+  db.saveAll();
+  res.json({ ok: true, removed: ids.length });
+});
+
+app.post('/api/students/:id/photo', authRequired, adminOnly, upload.single('photo'), (req, res) => {
+  const student = db.store.students.find((s) => s.id === Number(req.params.id));
+  if (!student) return res.status(404).json({ error: 'O`quvchi topilmadi' });
+  if (!req.file) return res.status(400).json({ error: 'Rasm yuklanmadi' });
+
+  student.photo = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+  db.saveCollection('students');
+  res.json({ photo: student.photo });
+});
+
+// ---------- Ota-ona login/parolini ko'rish va qayta yaratish ----------
+app.get('/api/students/:id/parent-credentials', authRequired, adminOnly, (req, res) => {
+  const user = db.store.users.find((u) => u.role === 'parent' && u.studentId === Number(req.params.id));
+  if (!user) return res.status(404).json({ error: 'Ota-ona kirish yozuvi topilmadi' });
+  res.json({ parentUsername: user.username });
+});
+
+app.post('/api/students/:id/parent-credentials', authRequired, adminOnly, (req, res) => {
+  const student = db.store.students.find((s) => s.id === Number(req.params.id));
+  if (!student) return res.status(404).json({ error: 'O`quvchi topilmadi' });
+
+  let user = db.store.users.find((u) => u.role === 'parent' && u.studentId === student.id);
+  if (!user) {
+    user = {
+      id: db.nextId('users'),
+      username: makeUsername(student.lastName, student.firstName),
+      passwordHash: null,
+      role: 'parent',
+      fullName: student.parentName || `${student.firstName} ning ota-onasi`,
+      studentId: student.id,
+    };
+    db.store.users.push(user);
+  }
+
+  const b = req.body || {};
+  if (b.username && String(b.username).trim()) {
+    const uname = String(b.username).trim().toLowerCase();
+    const taken = db.store.users.find((u) => u.username === uname && u.id !== user.id);
+    if (taken) return res.status(400).json({ error: 'Bu login band, boshqasini tanlang' });
+    user.username = uname;
+  }
+
+  const newPassword = makePassword(8);
+  user.passwordHash = db.hashPassword(newPassword);
+  user.fullName = student.parentName || `${student.firstName} ning ota-onasi`;
+
+  db.saveCollection('users');
+  res.json({ parentUsername: user.username, parentPassword: newPassword });
+});
+
+// ---------- Oylik to'lovlar ----------
+app.get('/api/payments', authRequired, (req, res) => {
+  const month = Number(req.query.month);
+  const year = Number(req.query.year);
+
+  if (req.user.role === 'parent') {
+    const list = db.store.payments.filter((p) => p.studentId === req.user.studentId);
+    return res.json(list);
+  }
+
+  const studentIds = db.store.students.map((s) => s.id);
+  const list = db.store.payments
+    .filter((p) => studentIds.includes(p.studentId))
+    .filter((p) => (!isNaN(month) ? p.month === month : true) && (!isNaN(year) ? p.year === year : true));
+  res.json(list);
+});
+
+app.post('/api/payments/toggle', authRequired, adminOnly, (req, res) => {
+  const { studentId, month, year, paid } = req.body || {};
+  if (!studentId || !month || !year) return res.status(400).json({ error: 'Ma`lumot to`liq emas' });
+
+  const existing = db.store.payments.find(
+    (p) => p.studentId === studentId && p.month === Number(month) && p.year === Number(year)
+  );
+
+  if (paid) {
+    if (existing) {
+      existing.paid = true;
+      existing.paidAt = existing.paidAt || new Date().toISOString();
+    } else {
+      db.store.payments.push({
+        id: db.nextId('payments'),
+        studentId,
+        month: Number(month),
+        year: Number(year),
+        paid: true,
+        paidAt: new Date().toISOString(),
+      });
+    }
+  } else {
+    if (existing) {
+      existing.paid = false;
+      existing.paidAt = null;
+    }
+  }
+
+  db.saveCollection('payments');
+  res.json({ ok: true });
+});
+
+// ---------- Davomat ----------
+app.get('/api/attendance', authRequired, (req, res) => {
+  const date = req.query.date;
+  let list = db.store.attendance;
+  if (date) list = list.filter((a) => a.date === date);
+  if (req.user.role === 'parent') list = list.filter((a) => a.studentId === req.user.studentId);
+  res.json(list);
+});
+
+app.post('/api/attendance', authRequired, adminOnly, (req, res) => {
+  const { studentId, date, status } = req.body || {};
+  if (!studentId || !date || !status) return res.status(400).json({ error: 'Ma`lumot to`liq emas' });
+  const valid = ['present', 'absent', 'late'];
+  if (!valid.includes(status)) return res.status(400).json({ error: 'Status noto`g`ri' });
+
+  const existing = db.store.attendance.find((a) => a.studentId === studentId && a.date === date);
+  if (existing) {
+    existing.status = status;
+  } else {
+    db.store.attendance.push({ id: db.nextId('attendance'), studentId, date, status });
+  }
+  db.saveCollection('attendance');
+  res.json({ ok: true });
+});
+
+// ---------- Baholar ----------
+app.get('/api/grades', authRequired, (req, res) => {
+  const studentId =
+    req.user.role === 'parent' ? Number(req.user.studentId) : Number(req.query.studentId);
+  let list = db.store.grades;
+  if (!isNaN(studentId)) list = list.filter((g) => g.studentId === studentId);
+  res.json(list);
+});
+
+app.post('/api/grades', authRequired, adminOnly, (req, res) => {
+  const { studentId, subject, score, date } = req.body || {};
+  if (!studentId || !subject || !score) return res.status(400).json({ error: 'Ma`lumot to`liq emas' });
+  const s = Number(score);
+  if (s < 1 || s > 5) return res.status(400).json({ error: 'Bahо 1–5 oralig`ida bo`lishi kerak' });
+
+  db.store.grades.push({
+    id: db.nextId('grades'),
+    studentId: Number(studentId),
+    subject: String(subject).trim(),
+    score: s,
+    date: date || new Date().toISOString().slice(0, 10),
+  });
+  db.saveCollection('grades');
+  res.status(201).json({ ok: true });
+});
+
+app.delete('/api/grades/:id', authRequired, adminOnly, (req, res) => {
+  db.store.grades = db.store.grades.filter((g) => g.id !== Number(req.params.id));
+  db.saveCollection('grades');
+  res.json({ ok: true });
+});
+
+// ---------- Ota-ona paneli ----------
+app.get('/api/parent', authRequired, (req, res) => {
+  if (req.user.role !== 'parent') return res.status(403).json({ error: 'Ruxsat yo`q' });
+  const student = db.store.students.find((s) => s.id === req.user.studentId);
+  if (!student) return res.status(404).json({ error: 'Farzand topilmadi' });
+
+  const grades = db.store.grades.filter((g) => g.studentId === student.id);
+  const attendance = db.store.attendance.filter((a) => a.studentId === student.id);
+  const payments = db.store.payments.filter((p) => p.studentId === student.id);
+
+  const subjects = {};
+  for (const g of grades) {
+    if (!subjects[g.subject]) subjects[g.subject] = [];
+    subjects[g.subject].push(g.score);
+  }
+  const subjectAverages = [];
+  for (const subj of Object.keys(subjects)) {
+    const arr = subjects[subj];
+    subjectAverages.push({ subject: subj, avg: arr.reduce((a, b) => a + b, 0) / arr.length, count: arr.length });
+  }
+  const avgGrade = grades.length ? grades.reduce((a, b) => a + b.score, 0) / grades.length : null;
+
+  res.json({ student, grades, attendance, payments, subjectAverages, avgGrade });
+});
+
+// ---------- Statistika (dashbord) ----------
+app.get('/api/stats', authRequired, adminOnly, (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const month = new Date().getMonth() + 1;
+  const year = new Date().getFullYear();
+
+  const totalStudents = db.store.students.length;
+  const todayAttendance = db.store.attendance.filter((a) => a.date === today);
+  const presentToday = todayAttendance.filter((a) => a.status === 'present').length;
+  const absentToday = todayAttendance.filter((a) => a.status === 'absent').length;
+
+  const expected = db.store.students.length;
+  const thisMonthPaid = new Set(
+    db.store.payments.filter((p) => p.paid && p.month === month && p.year === year).map((p) => p.studentId)
+  ).size;
+
+  const grades = db.store.grades;
+  const avgSchool = grades.length ? grades.reduce((a, b) => a + b.score, 0) / grades.length : null;
+
+  res.json({
+    totalStudents,
+    presentToday,
+    absentToday,
+    unmarkedToday: Math.max(0, expected - todayAttendance.length),
+    paidThisMonth: thisMonthPaid,
+    unpaidThisMonth: Math.max(0, expected - thisMonthPaid),
+    avgGrade: avgSchool ? Number(avgSchool.toFixed(2)) : null,
+  });
+});
+
+db.loadAll()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`\n=== OLIMP-LIDER tizimi ishlamoqda ===`);
+      console.log(`Lokal manzil:  http://localhost:${PORT}`);
+    });
+  })
+  .catch((e) => {
+    console.error('Ishga tushirishda xato:', e.message);
+    process.exit(1);
+  });
