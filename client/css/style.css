@@ -785,24 +785,111 @@ td.actions { display: flex; gap: 6px; }
 @keyframes spinSlow { to { transform: rotate(360deg); } }
 @keyframes radarSweep { to { transform: rotate(360deg); } }
 
+button, .nav-item { -webkit-tap-highlight-color: transparent; }
+
 @media (max-width: 900px) {
-  .sidebar { width: 64px; }
-  .sidebar-header h2, .sidebar-header span, .nav-item { font-size: 0; justify-content: center; }
-  .sidebar-header { justify-content: center; padding: 14px 8px; }
-  .brand-logo { width: 46px; height: 46px; }
-  .nav-item span.text { display: none; }
+  /* Pastki (mobil) navigatsiya paneli */
+  .app { display: block; }
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: fixed;
+    left: 0;
+    top: auto;
+    bottom: 0;
+    flex-direction: row;
+    align-items: stretch;
+    border-right: none;
+    border-top: 1px solid rgba(212, 175, 55, 0.45);
+    background: rgba(13, 17, 10, 0.96);
+    backdrop-filter: blur(10px);
+    z-index: 60;
+    padding: 4px 6px calc(4px + env(safe-area-inset-bottom));
+  }
+  .sidebar-header { display: none; }
+  .nav {
+    flex-direction: row;
+    overflow-x: auto;
+    align-items: stretch;
+    gap: 2px;
+    padding: 2px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav-item {
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    min-width: 66px;
+    padding: 7px 10px;
+    font-size: 10px !important;
+    text-align: center;
+    border-left: none !important;
+    border-radius: 10px;
+  }
+  .nav-item svg { width: 21px; height: 21px; }
+  .nav-item span.text { display: block; }
+  .nav-item.active { border-left: none; }
+  .nav-item.active::after { display: none; }
+  .nav-item.active svg { animation: none; }
+  .sidebar-footer {
+    border-top: none;
+    padding: 2px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: stretch;
+  }
   .sidebar-footer .user-info, .sidebar-footer .contact-links { display: none; }
+  .sidebar-footer .nav-item { min-width: 58px; color: #f59588; }
+
+  .main { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+
+  /* Topbar */
+  .topbar { padding: 10px 12px; gap: 8px; flex-wrap: wrap; }
+  .topbar h1 { font-size: 13px; letter-spacing: 0.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .refresh-btn { padding: 10px 12px; }
+  .clock-box { font-size: 12px; gap: 5px; }
+
+  .content { padding: 14px 12px 26px; }
+  .panel-header { padding: 12px 14px; }
+  .panel-header h3 { font-size: 13px; letter-spacing: 0.3px; }
+  .panel-body { padding: 12px 12px; }
   .form-grid { grid-template-columns: 1fr; }
-  .content { padding: 16px; }
   .refresh-label { display: none; }
   .clock-date { display: none; }
-  .topbar { padding: 12px 16px; }
-  .login-card { padding: 34px 24px; }
-  .contact-strip { display: flex; }
+  .login-card { padding: 30px 20px; }
+  .contact-strip { display: flex; font-size: 13px; padding: 7px 12px; }
   .toolbar { flex-wrap: wrap; }
-  .toolbar input, .toolbar select, .toolbar button, input, select { font-size: 16px; }
+  .toolbar input, .toolbar select, .toolbar button, input, select, textarea { font-size: 16px; }
   .btn { padding: 11px 16px; }
-  .stats-grid { grid-template-columns: 1fr 1fr; }
-  .score-input, .test-score { width: 70px; }
+  .stats-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat-card { padding: 13px; gap: 10px; }
+  .stat-value { font-size: 20px; }
+  .stat-icon { width: 40px; height: 40px; }
+  .score-input, .test-score { width: 66px; }
   .modal { max-height: 88vh; }
+  .modal-body { padding: 18px; }
+  th, td { padding: 10px 10px; font-size: 13px; }
+  .avatar { width: 36px; height: 36px; font-size: 13px; }
+  .student-cell { gap: 8px; }
+  .journal .jname { min-width: 118px; padding: 8px 8px; font-size: 12px; }
+  .journal .jhead { min-width: 30px; padding: 6px 1px; font-size: 10px; }
+  .jcell { width: 30px; height: 30px; min-width: 30px; font-size: 14px; }
+  .parent-hero { flex-wrap: wrap; padding: 20px; gap: 14px; }
+  .parent-hero .avatar { width: 68px; height: 68px; font-size: 26px; }
+  .parent-hero h2 { font-size: 17px; }
+  .diary-entry { flex-wrap: wrap; gap: 8px; }
+}
+
+@media (max-width: 480px) {
+  .modal-overlay { padding: 8px; align-items: flex-end; }
+  .modal { border-radius: 18px 18px 0 0; max-height: 92vh; }
+  .modal-footer { flex-wrap: wrap; }
+  .modal-footer .btn { flex: 1 1 45%; }
+  .nav-item { min-width: 60px; padding: 6px 8px; font-size: 9px !important; }
+  .nav-item svg { width: 20px; height: 20px; }
+  .stat-card { padding: 11px 10px; }
+  .stat-icon { width: 36px; height: 36px; }
+  .topbar h1 { font-size: 12px; }
 }
