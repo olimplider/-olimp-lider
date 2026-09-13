@@ -134,6 +134,7 @@
         <option value="">Barcha sinflar (${students.length})</option>
         ${classes.map((c) => `<option value="${escapeHtml(c)}" ${c === classFilter ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
       </select>
+      <button class="btn btn-outline" onclick="window.appExportWord()">${ICONS.doc.replace('width="18"', 'width="16"')} Word (docx)</button>
       <button class="btn btn-primary" onclick="window.appAddStudent()">${ICONS.students.replace('width="18"', 'width="16"')} O'quvchi qo'shish</button>
     </div>`;
 
@@ -795,6 +796,30 @@
   window.appOpenClass = (name) => openClass(name);
   window.appDeleteClass = (name) => deleteClass(name);
   window.appParentCred = (id) => parentCred(id);
+  window.appExportWord = async () => {
+    const className = classFilter || '';
+    const target = className || 'barcha_sinflar';
+    toast('Word hujjat tayyorlanmoqda...');
+    try {
+      const res = await fetch('/api/export/class?className=' + encodeURIComponent(className), {
+        headers: { Authorization: 'Bearer ' + API.getToken() },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Yuklab olishda xato');
+      }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = target + '_oquvchilar.docx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      toast('Word fayl yuklab olindi');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
   window.appCopyPc = (id) => {
     const el = document.getElementById(id);
     if (!el) return;

@@ -229,6 +229,87 @@ app.delete('/api/classes/:name', authRequired, adminOnly, (req, res) => {
   res.json({ ok: true, removed: ids.length });
 });
 
+// ---------- Sinf o'quvchilari ro'yxatini Word (docx) qilib yuklab olish ----------
+app.get('/api/export/class', authRequired, adminOnly, async (req, res) => {
+  const className = String(req.query.className || '').trim();
+  if (!className) return res.status(400).json({ error: 'Sinf nomi ko`rsatilmagan' });
+
+  const students = db.store.students
+    .filter((s) => (s.className || '(sinsiz)') === className)
+    .sort((a, b) => a.lastName.localeCompare(b.lastName, 'uz'));
+
+  const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType } = require('docx');
+
+  const cell = (text, opts = {}) =>
+    new TableCell({
+      width: opts.width ? { size: opts.width, type: WidthType.DXA } : undefined,
+      shading: opts.shading ? { fill: opts.shading } : undefined,
+      children: [
+        new Paragraph({
+          alignment: opts.align || AlignmentType.LEFT,
+          children: [new TextRun({ text, bold: !!opts.bold, size: 22, font: 'Times New Roman' })],
+        }),
+      ],
+    });
+
+  const headerRow = new TableRow({
+    tableHeader: true,
+    children: [
+      cell('№', { bold: true, align: AlignmentType.CENTER, width: 500, shading: 'DCE6F1' }),
+      cell('F.I.Sh.', { bold: true, width: 3500, shading: 'DCE6F1' }),
+      cell("Tug'ilgan sana", { bold: true, width: 2000, shading: 'DCE6F1' }),
+      cell('Ota-onasi', { bold: true, width: 2600, shading: 'DCE6F1' }),
+      cell('Telefon', { bold: true, width: 2200, shading: 'DCE6F1' }),
+      cell('Oylik to\'lov', { bold: true, align: AlignmentType.CENTER, width: 1500, shading: 'DCE6F1' }),
+    ],
+  });
+
+  const bodyRows = students.map((s, i) =>
+    new TableRow({
+      children: [
+        cell(String(i + 1), { align: AlignmentType.CENTER, width: 500 }),
+        cell(`${s.lastName} ${s.firstName} ${s.patronymic || ''}`.trim(), { width: 3500 }),
+        cell(s.birthDate || '-', { align: AlignmentType.CENTER, width: 2000 }),
+        cell(s.parentName || '-', { width: 2600 }),
+        cell(s.parentPhone || '-', { align: AlignmentType.CENTER, width: 2200 }),
+        cell(s.monthlyFee ? `${s.monthlyFee} so'm` : '-', { align: AlignmentType.CENTER, width: 1500 }),
+      ],
+    })
+  );
+
+  const doc = new Document({
+    styles: { default: { document: { run: { font: 'Times New Roman', size: 22 } } } },
+    sections: [{
+      children: [
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          children: [new TextRun({ text: 'OLIMP-LIDER MAXSUS HARBIY SPORT KLUBI', bold: true, size: 30, font: 'Times New Roman' })],
+        }),
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 200 },
+          children: [new TextRun({ text: `${className} sinf o\u2018quvchilarining umumiy ro\u2018yxati`, bold: true, size: 28, font: 'Times New Roman' })],
+        }),
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 300 },
+          children: [new TextRun({ text: `O\u2018quvchilar soni: ${students.length}  |  Sana: ${new Date().toLocaleDateString('uz-UZ')}`, size: 22, font: 'Times New Roman' })],
+        }),
+        new Table({
+          width: { size: 12300, type: WidthType.DXA },
+          rows: [headerRow, ...bodyRows],
+        }),
+      ],
+    }],
+  });
+
+  const buffer = await Packer.toBuffer(doc);
+  const safeName = className.replace(/[^\w\d-]+/g, '_') || 'sinf';
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName}_oquvchilar.docx"`);
+  res.send(buffer);
+});
+
 app.post('/api/students/:id/photo', authRequired, adminOnly, upload.single('photo'), (req, res) => {
   const student = db.store.students.find((s) => s.id === Number(req.params.id));
   if (!student) return res.status(404).json({ error: 'O`quvchi topilmadi' });
