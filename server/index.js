@@ -82,7 +82,7 @@ function adminOnly(req, res, next) {
 // ---------- Auth API ----------
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body || {};
-  const user = db.store.users.find((u) => u.username === String(username || '').toLowerCase());
+  const user = db.store.users.find((u) => u.username === String(username || '').trim().toLowerCase());
   if (!user || !db.verifyPassword(password || '', user.passwordHash)) {
     return res.status(401).json({ error: 'Login yoki parol noto`g`ri' });
   }
@@ -587,69 +587,94 @@ app.get('/api/export/class', authRequired, adminOnly, async (req, res) => {
     .filter((s) => (s.className || '(sinsiz)') === className)
     .sort((a, b) => a.lastName.localeCompare(b.lastName, 'uz'));
 
-  const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType } = require('docx');
+  const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, TableLayoutType, VerticalAlign, BorderStyle, PageOrientation, AlignmentType } = require('docx');
+
+  const TNR = 'Times New Roman';
+  const FN = (size) => ({ font: TNR, size });
+  // A4 (11906 x 16838 DXA), bo'yiga (knijniy/portrait), 1 sm yon hoshiya, 1.27 sm tepa/past
+  const PAGE_W = 11906;
+  const LEFT_RIGHT = 567;
+  const TOP_BOTTOM = 720;
+  const USABLE = PAGE_W - LEFT_RIGHT * 2; // 10772
+  const COLS = [700, 3300, 1800, 2500, 1700, 772]; // yig'indisi USABLE
+  const BORDER = { style: BorderStyle.SINGLE, size: 4, color: '000000' };
 
   const cell = (text, opts = {}) =>
     new TableCell({
-      width: opts.width ? { size: opts.width, type: WidthType.DXA } : undefined,
-      shading: opts.shading ? { fill: opts.shading } : undefined,
+      width: { size: COLS[opts.col], type: WidthType.DXA },
+      verticalAlign: VerticalAlign.CENTER,
+      shading: opts.shading ? { fill: opts.shading, color: 'auto' } : undefined,
+      borders: { top: BORDER, bottom: BORDER, left: BORDER, right: BORDER },
       children: [
-        new Paragraph({
-          alignment: opts.align || AlignmentType.LEFT,
-          children: [new TextRun({ text, bold: !!opts.bold, size: 22, font: 'Times New Roman' })],
-        }),
+        new Paragraph(
+          opts.align
+            ? { alignment: opts.align, spacing: { before: 40, after: 40 }, children: [new TextRun({ text, bold: !!(opts.bold || opts.header), ...FN(opts.size || 22) })] }
+            : { spacing: { before: 40, after: 40 }, children: [new TextRun({ text, bold: !!(opts.bold || opts.header), ...FN(opts.size || 22) })] }
+        ),
       ],
     });
 
   const headerRow = new TableRow({
     tableHeader: true,
     children: [
-      cell('№', { bold: true, align: AlignmentType.CENTER, width: 500, shading: 'DCE6F1' }),
-      cell('F.I.Sh.', { bold: true, width: 3500, shading: 'DCE6F1' }),
-      cell("Tug'ilgan sana", { bold: true, width: 2000, shading: 'DCE6F1' }),
-      cell('Ota-onasi', { bold: true, width: 2600, shading: 'DCE6F1' }),
-      cell('Telefon', { bold: true, width: 2200, shading: 'DCE6F1' }),
-      cell('Oylik to\'lov', { bold: true, align: AlignmentType.CENTER, width: 1500, shading: 'DCE6F1' }),
+      cell('T/r', { col: 0, header: true, align: AlignmentType.CENTER, shading: 'DCE6F1' }),
+      cell('F.I.Sh.', { col: 1, header: true, shading: 'DCE6F1' }),
+      cell("Tug'ilgan sana", { col: 2, header: true, align: AlignmentType.CENTER, shading: 'DCE6F1' }),
+      cell('Ota-onasi', { col: 3, header: true, shading: 'DCE6F1' }),
+      cell('Telefon', { col: 4, header: true, align: AlignmentType.CENTER, shading: 'DCE6F1' }),
+      cell("Oylik to'lov", { col: 5, header: true, align: AlignmentType.CENTER, shading: 'DCE6F1' }),
     ],
   });
 
   const bodyRows = students.map((s, i) =>
     new TableRow({
       children: [
-        cell(String(i + 1), { align: AlignmentType.CENTER, width: 500 }),
-        cell(`${s.lastName} ${s.firstName} ${s.patronymic || ''}`.trim(), { width: 3500 }),
-        cell(s.birthDate || '-', { align: AlignmentType.CENTER, width: 2000 }),
-        cell(s.parentName || '-', { width: 2600 }),
-        cell(s.parentPhone || '-', { align: AlignmentType.CENTER, width: 2200 }),
-        cell(s.monthlyFee ? `${s.monthlyFee} so'm` : '-', { align: AlignmentType.CENTER, width: 1500 }),
+        cell(String(i + 1), { col: 0, align: AlignmentType.CENTER }),
+        cell(`${s.lastName} ${s.firstName} ${s.patronymic || ''}`.trim(), { col: 1 }),
+        cell(s.birthDate || '-', { col: 2, align: AlignmentType.CENTER }),
+        cell(s.parentName || '-', { col: 3 }),
+        cell(s.parentPhone || '-', { col: 4, align: AlignmentType.CENTER }),
+        cell(s.monthlyFee ? `${s.monthlyFee} so'm` : '-', { col: 5, align: AlignmentType.CENTER }),
       ],
     })
   );
 
   const doc = new Document({
-    styles: { default: { document: { run: { font: 'Times New Roman', size: 22 } } } },
-    sections: [{
-      children: [
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: 'OLIMP-LIDER MAXSUS HARBIY SPORT KLUBI', bold: true, size: 30, font: 'Times New Roman' })],
-        }),
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { after: 200 },
-          children: [new TextRun({ text: `${className} sinf o\u2018quvchilarining umumiy ro\u2018yxati`, bold: true, size: 28, font: 'Times New Roman' })],
-        }),
-        new Paragraph({
-          alignment: AlignmentType.CENTER,
-          spacing: { after: 300 },
-          children: [new TextRun({ text: `O\u2018quvchilar soni: ${students.length}  |  Sana: ${new Date().toLocaleDateString('uz-UZ')}`, size: 22, font: 'Times New Roman' })],
-        }),
-        new Table({
-          width: { size: 12300, type: WidthType.DXA },
-          rows: [headerRow, ...bodyRows],
-        }),
-      ],
-    }],
+    styles: { default: { document: { run: { font: TNR, size: 22 } } } },
+    sections: [
+      {
+        properties: {
+          page: {
+            orientation: PageOrientation.PORTRAIT,
+            size: { width: PAGE_W, height: 16838 },
+            margin: { top: TOP_BOTTOM, right: LEFT_RIGHT, bottom: TOP_BOTTOM, left: LEFT_RIGHT },
+          },
+        },
+        children: [
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 60 },
+            children: [new TextRun({ text: 'OLIMP-LIDER MAXSUS HARBIY SPORT KLUBI', bold: true, ...FN(28) })],
+          }),
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 120 },
+            children: [new TextRun({ text: `${className} sinf o\u2018quvchilarining umumiy ro\u2018yxati`, bold: true, ...FN(26) })],
+          }),
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 260 },
+            children: [new TextRun({ text: `O\u2018quvchilar soni: ${students.length}   |   Sana: ${new Date().toLocaleDateString('uz-UZ')}`, ...FN(22) })],
+          }),
+          new Table({
+            width: { size: USABLE, type: WidthType.DXA },
+            layout: TableLayoutType.FIXED,
+            columnWidths: COLS,
+            rows: [headerRow, ...bodyRows],
+          }),
+        ],
+      },
+    ],
   });
 
   const buffer = await Packer.toBuffer(doc);
