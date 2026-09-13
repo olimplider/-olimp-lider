@@ -494,17 +494,27 @@
 
   // ---------- DAVOMAT ----------
   let attendDate = todayStr();
+  let attendClass = '';
 
   async function renderAttendance() {
     students = await loadStudents(true);
+    const classes = [...new Set(students.map((s) => s.className || '(sinsiz)'))].sort();
     topbarActions.innerHTML = `
       <div class="toolbar">
         <input type="date" id="attDate" class="date-pick" value="${attendDate}">
-        <button class="btn btn-outline btn-sm" onclick="window.appMarkAllPresent()">Hammasini belgilash</button>
+        <select id="attClass">
+          <option value="">Barcha sinflar</option>
+          ${classes.map((c) => `<option value="${escapeHtml(c)}" ${c === attendClass ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+        </select>
       </div>`;
 
     document.getElementById('attDate').addEventListener('change', (e) => {
       attendDate = e.target.value;
+      renderAttTable();
+    });
+
+    document.getElementById('attClass').addEventListener('change', (e) => {
+      attendClass = e.target.value;
       renderAttTable();
     });
 
@@ -521,22 +531,21 @@
       return;
     }
 
-    const b = (ok) => ok
-      ? '<span class="badge badge-green" style="font-size:11px">Keldi</span>'
-      : '<span class="badge badge-red" style="font-size:11px">Kelmadi</span>';
+    const list = attendClass ? students.filter((s) => (s.className || '(sinsiz)') === attendClass) : students;
 
-    const rows = students.map((s) => {
+    const rows = list.map((s) => {
       const st = map[s.id] || null;
       return `<tr>
         <td><div class="student-cell">${avatarHtml(s)}<div><div class="name">${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</div><div class="sub">${escapeHtml(s.className)}</div></div></div></td>
-        <td><button class="btn btn-sm ${st === 'present' ? 'btn-success' : 'btn-ghost'}" onclick="window.appSetAtt(${s.id},'present',this)">✓ Keldi</button></td>
-        <td><button class="btn btn-sm ${st === 'late' ? 'btn-outline' : 'btn-ghost'}" onclick="window.appSetAtt(${s.id},'late',this)" style="border-color:#d97706;color:#d97706">⏰ Kechikdi</button></td>
-        <td><button class="btn btn-sm ${st === 'absent' ? 'btn-danger' : 'btn-ghost'}" onclick="window.appSetAtt(${s.id},'absent',this)">✗ Kelmadi</button></td>
+        <td><button class="btn btn-sm ${st === 'present' ? 'btn-success' : 'btn-ghost'}" onclick="window.appSetAtt(${s.id},'present')">✓ Keldi</button></td>
+        <td><button class="btn btn-sm ${st === 'late' ? 'btn-outline' : 'btn-ghost'}" onclick="window.appSetAtt(${s.id},'late')" style="border-color:#d97706;color:#d97706">⏰ Kechikdi</button></td>
+        <td><button class="btn btn-sm ${st === 'absent' ? 'btn-danger' : 'btn-ghost'}" onclick="window.appSetAtt(${s.id},'absent')">✗ Kelmadi</button></td>
+        <td><button class="btn btn-sm btn-ghost" onclick="window.appSetAtt(${s.id},null)" title="Belgini olib tashlash">✕</button></td>
       </tr>`;
     }).join('');
 
     let p = 0, a = 0, l = 0, u = 0;
-    students.forEach((s) => {
+    list.forEach((s) => {
       const st = map[s.id];
       if (st === 'present') p++;
       else if (st === 'absent') a++;
@@ -551,22 +560,102 @@
         <div class="stat-card"><div class="stat-icon red"><span style="font-size:18px">✗</span></div><div><div class="stat-value">${a}</div><div class="stat-label">Kelmadi</div></div></div>
         <div class="stat-card"><div class="stat-icon blue"><span style="font-size:18px">?</span></div><div><div class="stat-value">${u}</div><div class="stat-label">Belgilanmagan</div></div></div>
       </div>
-      <div class="panel"><div class="table-wrap"><table>
-        <thead><tr><th>O'quvchi</th><th>Keldi</th><th>Kechikdi</th><th>Kelmadi</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table></div></div>`;
+      <div class="panel">
+        <div class="panel-header"><h3>O'quvchilar davomati${attendClass ? ' • ' + escapeHtml(attendClass) : ''}</h3>
+          <div class="toolbar">
+            <select id="bulkAttSt">
+              <option value="present">Hammasini: Keldi</option>
+              <option value="late">Hammasini: Kechikdi</option>
+              <option value="absent">Hammasini: Kelmadi</option>
+              <option value="clear">Barchasini tozalash</option>
+            </select>
+            <button class="btn btn-outline btn-sm" onclick="window.appBulkStudents()">Qo'llash</button>
+          </div>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>O'quvchi</th><th>Keldi</th><th>Kechikdi</th><th>Kelmadi</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+      </div>
+      <div id="teacherAttPanel"></div>`;
+
+    await renderTeacherAtt();
+  }
+
+  async function renderTeacherAtt() {
+    const panel = document.getElementById('teacherAttPanel');
+    if (!panel) return;
+    let teachers = [];
+    try { teachers = await API.get('/api/teachers'); } catch (e) { panel.innerHTML = ''; return; }
+    const att = await API.get('/api/teacher-attendance?date=' + attendDate);
+    const map = {};
+    att.forEach((a) => { map[a.teacherId] = a.status; });
+
+    if (!teachers.length) { panel.innerHTML = ''; return; }
+
+    const rows = teachers.map((t) => {
+      const st = map[t.id] || null;
+      return `<tr>
+        <td><div class="student-cell"><div class="avatar">${escapeHtml((t.fullName || 'T').trim()[0].toUpperCase())}</div><div><div class="name">${escapeHtml(t.fullName)}</div><div class="sub">${escapeHtml((t.subjects || []).join(', '))}</div></div></div></td>
+        <td><button class="btn btn-sm ${st === 'present' ? 'btn-success' : 'btn-ghost'}" onclick="window.appSetTAtt(${t.id},'present')">✓ Keldi</button></td>
+        <td><button class="btn btn-sm ${st === 'late' ? 'btn-outline' : 'btn-ghost'}" onclick="window.appSetTAtt(${t.id},'late')" style="border-color:#d97706;color:#d97706">⏰ Kechikdi</button></td>
+        <td><button class="btn btn-sm ${st === 'absent' ? 'btn-danger' : 'btn-ghost'}" onclick="window.appSetTAtt(${t.id},'absent')">✗ Kelmadi</button></td>
+        <td><button class="btn btn-sm btn-ghost" onclick="window.appSetTAtt(${t.id},null)" title="Belgini olib tashlash">✕</button></td>
+      </tr>`;
+    }).join('');
+
+    let p = 0, a = 0, l = 0;
+    teachers.forEach((t) => {
+      const st = map[t.id];
+      if (st === 'present') p++;
+      else if (st === 'absent') a++;
+      else if (st === 'late') l++;
+    });
+
+    panel.innerHTML = `
+      <div class="panel">
+        <div class="panel-header"><h3>O'qituvchilar davomati</h3>
+          <div class="toolbar">
+            <select id="bulkTAttSt">
+              <option value="present">Hammasini: Keldi</option>
+              <option value="late">Hammasini: Kechikdi</option>
+              <option value="absent">Hammasini: Kelmadi</option>
+              <option value="clear">Barchasini tozalash</option>
+            </select>
+            <button class="btn btn-outline btn-sm" onclick="window.appBulkTeachers()">Qo'llash</button>
+          </div>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>O'qituvchi</th><th>Keldi</th><th>Kechikdi</th><th>Kelmadi</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+      </div>`;
   }
 
   async function setAttendance(studentId, status) {
     await API.post('/api/attendance', { studentId, date: attendDate, status });
   }
 
-  async function markAllPresent() {
-    for (const s of students) {
-      await setAttendance(s.id, 'present');
-    }
-    toast('Barchasi belgilandi');
+  async function setTeacherAtt(teacherId, status) {
+    await API.post('/api/teacher-attendance', { teacherId, date: attendDate, status });
+  }
+
+  async function bulkStudents() {
+    const st = document.getElementById('bulkAttSt').value;
+    const status = st === 'clear' ? null : st;
+    const list = attendClass ? students.filter((s) => (s.className || '(sinsiz)') === attendClass) : students;
+    for (const s of list) await setAttendance(s.id, status);
+    toast('Qo\'llandi');
     await renderAttTable();
+  }
+
+  async function bulkTeachers() {
+    const st = document.getElementById('bulkTAttSt').value;
+    const status = st === 'clear' ? null : st;
+    const teachers = await API.get('/api/teachers');
+    for (const t of teachers) await setTeacherAtt(t.id, status);
+    toast('Qo\'llandi');
+    await renderTeacherAtt();
   }
 
   // ---------- BAHOLAR ----------
@@ -1055,7 +1144,15 @@ initContact('contactTop');
     await renderAttTable();
     _setAttInProgress = false;
   };
-  window.appMarkAllPresent = () => markAllPresent();
+  window.appSetTAtt = async (id, status) => {
+    if (_setAttInProgress) return;
+    _setAttInProgress = true;
+    await setTeacherAtt(id, status);
+    await renderTeacherAtt();
+    _setAttInProgress = false;
+  };
+  window.appBulkStudents = () => bulkStudents();
+  window.appBulkTeachers = () => bulkTeachers();
   window.appAddGrade = () => addGradeModal();
   window.appDelGrade = (id) => deleteGrade(id);
   window.appGenPass = genPassword;

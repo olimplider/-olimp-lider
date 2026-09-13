@@ -3,7 +3,7 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
-const COLLECTIONS = ['students', 'users', 'payments', 'attendance', 'grades', 'teachers', 'tests', 'settings', 'subjects'];
+const COLLECTIONS = ['students', 'users', 'payments', 'attendance', 'grades', 'teachers', 'tests', 'settings', 'subjects', 'teacher_attendance'];
 const OBJECT_COLLECTIONS = ['settings'];
 
 const store = {
@@ -16,6 +16,7 @@ const store = {
   tests: [],
   settings: {},
   subjects: [],
+  teacher_attendance: [],
 };
 
 // ---------- Saqlash rejimi ----------

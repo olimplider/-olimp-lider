@@ -354,6 +354,7 @@ app.delete('/api/teachers/:id', authRequired, adminOnly, (req, res) => {
   db.store.teachers = db.store.teachers.filter((t) => t.id !== id);
   db.store.users = db.store.users.filter((u) => !(u.role === 'teacher' && u.teacherId === id));
   db.store.tests = db.store.tests.filter((t) => t.teacherId !== id);
+  db.store.teacher_attendance = db.store.teacher_attendance.filter((a) => a.teacherId !== id);
   db.saveAll();
   res.json({ ok: true });
 });
@@ -927,18 +928,64 @@ app.get('/api/attendance', authRequired, (req, res) => {
 
 app.post('/api/attendance', authRequired, adminOnly, (req, res) => {
   const { studentId, date, status } = req.body || {};
-  if (!studentId || !date || !status) return res.status(400).json({ error: 'Ma`lumot to`liq emas' });
-  const valid = ['present', 'absent', 'late'];
+  if (!studentId || !date) return res.status(400).json({ error: 'Ma`lumot to`liq emas' });
+  const valid = ['present', 'absent', 'late', null];
   if (!valid.includes(status)) return res.status(400).json({ error: 'Status noto`g`ri' });
 
   const existing = db.store.attendance.find((a) => a.studentId === studentId && a.date === date);
-  if (existing) {
+  if (status === null) {
+    if (existing) db.store.attendance = db.store.attendance.filter((a) => a !== existing);
+  } else if (existing) {
     existing.status = status;
   } else {
     db.store.attendance.push({ id: db.nextId('attendance'), studentId, date, status });
   }
   db.saveCollection('attendance');
   res.json({ ok: true });
+});
+
+// ---------- O'qituvchi davomati (admin) ----------
+app.get('/api/teacher-attendance', authRequired, adminOnly, (req, res) => {
+  const date = String(req.query.date || '').trim();
+  res.json(date ? db.store.teacher_attendance.filter((a) => a.date === date) : db.store.teacher_attendance);
+});
+
+app.post('/api/teacher-attendance', authRequired, adminOnly, (req, res) => {
+  const { teacherId, date, status } = req.body || {};
+  if (!teacherId || !date) return res.status(400).json({ error: 'Ma`lumot to`liq emas' });
+  const valid = ['present', 'absent', 'late', null];
+  if (!valid.includes(status)) return res.status(400).json({ error: 'Status noto`g`ri' });
+
+  const tid = Number(teacherId);
+  const existing = db.store.teacher_attendance.find((a) => a.teacherId === tid && a.date === date);
+  if (status === null) {
+    if (existing) db.store.teacher_attendance = db.store.teacher_attendance.filter((a) => a !== existing);
+  } else if (existing) {
+    existing.status = status;
+  } else {
+    db.store.teacher_attendance.push({ id: db.nextId('teacher_attendance'), teacherId: tid, date, status });
+  }
+  db.saveCollection('teacher_attendance');
+  res.json({ ok: true });
+});
+
+app.post('/api/teacher-attendance/bulk', authRequired, adminOnly, (req, res) => {
+  const b = req.body || {};
+  const date = String(b.date || '').trim();
+  if (!date || !Array.isArray(b.records)) return res.status(400).json({ error: 'Ma`lumot to`liq emas' });
+  const valid = ['present', 'absent', 'late'];
+  let count = 0;
+  for (const rec of b.records) {
+    const status = rec.status;
+    const tid = Number(rec.teacherId);
+    if (!valid.includes(status) || !db.store.teachers.some((t) => t.id === tid)) continue;
+    const existing = db.store.teacher_attendance.find((a) => a.teacherId === tid && a.date === date);
+    if (existing) existing.status = status;
+    else db.store.teacher_attendance.push({ id: db.nextId('teacher_attendance'), teacherId: tid, date, status });
+    count++;
+  }
+  db.saveCollection('teacher_attendance');
+  res.json({ ok: true, count });
 });
 
 // ---------- Baholar ----------
