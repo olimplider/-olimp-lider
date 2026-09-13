@@ -3,16 +3,46 @@ const path = require('path');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const db = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'maktab-maxfiy-kalit-2026';
 
+if (app.get('env') === 'production') app.set('trust proxy', 1);
+app.disable('x-powered-by');
+
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: false,
+}));
+
+const loginLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 daqiqa
+  limit: 10, // IP boshiga 10 noto'g'ri urinish
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: 'Juda ko\'p urinish qilindi. 10 daqiqadan so\'ng qayta urinib ko\'ring.' },
+});
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 daqiqa
+  limit: 900, // IP boshiga 900 so'rov
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'So\'rovlar soni oshib ketdi. Birozdan so\'ng qayta urinib ko\'ring.' },
+});
+
+app.use('/api/auth/login', loginLimiter);
+app.use('/api/', apiLimiter);
+
 app.use('/uploads', express.static(UPLOAD_DIR));
 
 // ---------- Statik frontend ----------
