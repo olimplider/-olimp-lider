@@ -203,6 +203,25 @@ body {
 }
 .form-group input::placeholder { color: #6f6a55; }
 
+.password-wrap { position: relative; }
+.password-wrap input { padding-right: 48px; }
+.toggle-pass {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+.toggle-pass:hover { color: var(--gold); background: rgba(255, 255, 255, 0.06); }
+
 .btn {
   display: inline-flex;
   align-items: center;
