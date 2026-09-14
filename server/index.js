@@ -53,7 +53,8 @@ app.use(express.static(CLIENT_DIR, {
   maxAge: '7d',
   etag: true,
   setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+    const ext = path.extname(filePath).toLowerCase();
+    if (['.html', '.js', '.css', '.json'].includes(ext)) res.setHeader('Cache-Control', 'no-cache');
   },
 }));
 
