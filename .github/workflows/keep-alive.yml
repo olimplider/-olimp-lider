@@ -1,0 +1,15 @@
+name: keep-alive
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Saytni uyg'otish (asosiy sahifa)
+        run: curl -fsS --max-time 300 -o /dev/null https://olimplider.onrender.com/
+      - name: API'ni tekshirish
+        run: curl -fsS --max-time 300 -o /dev/null https://olimplider.onrender.com/api/settings
