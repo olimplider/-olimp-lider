@@ -101,6 +101,31 @@
           }).join('') : '<p class="empty-note">Hali baholar kiritilmagan.</p>'}
         </div>
       </div>
+
+      <div class="panel">
+        <div class="panel-header"><h3>Sog'liq holati</h3></div>
+        <div class="panel-body">
+          <div class="health-row">
+            <span class="badge ${data.medical && data.medical.hasForm ? (data.medical.status === 'expired' ? 'badge-red' : 'badge-green') : 'badge-red'}">
+              ${data.medical && data.medical.hasForm ? (data.medical.status === 'expired' ? '086 muddati o\'tgan' : '086-forma yaroqli') : '086-forma yo\'q'}
+            </span>
+            ${data.medical && data.medical.expiresAt ? `<span class="muted">Amal qiladi: ${escapeHtml(data.medical.expiresAt)}</span>` : '<span class="muted">6 oyga amal qiladi</span>'}
+          </div>
+          <div class="health-row">
+            ${data.todayHealth
+              ? (data.todayHealth.healthOk
+                  ? '<span class="badge badge-green">✓ Bugun sog\'lom</span>'
+                  : '<span class="badge badge-red">✗ Bugun holatda muammo bor</span>')
+              : '<span class="badge badge-blue">… Bugun tekshiruv yozilmagan</span>'}
+            ${data.todayHealth && data.todayHealth.note ? '<span class="muted">— ' + escapeHtml(data.todayHealth.note) + '</span>' : ''}
+          </div>
+          ${data.healthHistory && data.healthHistory.length ? `
+            <div class="sub" style="margin-top:8px">So'nggi tekshiruvlar (${data.healthHistory.length} ta):</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+              ${data.healthHistory.slice(0, 14).map((h) => `<span class="badge ${h.healthOk ? 'badge-green' : 'badge-red'}" style="margin:0">${escapeHtml(h.date)} ${h.healthOk ? '✓' : '✗'}</span>`).join('')}
+            </div>` : ''}
+        </div>
+      </div>
     `;
   }
 

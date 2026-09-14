@@ -71,7 +71,7 @@ const upload = multer({
 
 function signToken(user) {
   return jwt.sign(
-    { id: user.id, username: user.username, role: user.role, studentId: user.studentId || null, teacherId: user.teacherId || null },
+    { id: user.id, username: user.username, role: user.role, studentId: user.studentId || null, teacherId: user.teacherId || null, doctorId: user.doctorId || null },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -1503,7 +1503,16 @@ app.get('/api/parent', authRequired, (req, res) => {
       subjects: t.subjects || [],
     }));
 
-  res.json({ student, grades, attendance, payments, subjectAverages, avgGrade, diary, teachers });
+  const medical = medicalView(db.store.medical.find((m) => m.studentId === student.id));
+  const today = new Date().toISOString().slice(0, 10);
+  const todayHealth =
+    db.store.healthchecks.find((h) => h.studentId === student.id && h.date === today) || null;
+  const healthHistory = db.store.healthchecks
+    .filter((h) => h.studentId === student.id)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .map((h) => ({ date: h.date, healthOk: !!h.healthOk, note: h.note || '' }));
+
+  res.json({ student, grades, attendance, payments, subjectAverages, avgGrade, diary, teachers, medical, todayHealth, healthHistory });
 });
 
 // ---------- Statistika (dashbord) ----------

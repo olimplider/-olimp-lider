@@ -44,7 +44,7 @@
     initContact('contactLine');
     initClock('clock');
 
-    const roleOf = (role) => (role === 'admin' ? '/admin.html' : role === 'teacher' ? '/teacher.html' : '/parent.html');
+    const roleOf = (role) => (role === 'admin' ? '/admin.html' : role === 'teacher' ? '/teacher.html' : role === 'doctor' ? '/doctor.html' : '/parent.html');
     if (API.getToken()) {
       const role = API.getRole();
       window.location.href = roleOf(role);
