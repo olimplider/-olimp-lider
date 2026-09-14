@@ -50,6 +50,7 @@
     attendance: 'Davomat',
     grades: 'Baholar',
     teachers: "O'qituvchilar",
+    doctors: 'Shifokorlar',
     subjects: 'Fanlar',
     settings: 'Sozlamalar',
   };
@@ -75,6 +76,7 @@
       else if (section === 'attendance') await renderAttendance();
       else if (section === 'grades') await renderGrades();
       else if (section === 'teachers') await renderTeachers();
+      else if (section === 'doctors') await renderDoctors();
       else if (section === 'subjects') await renderSubjects();
       else if (section === 'settings') renderSettings();
     } catch (e) {
@@ -933,7 +935,7 @@ initContact('contactTop');
 
     const rows = teachers.map((t) => `
       <tr>
-        <td><div class="name">${escapeHtml(t.fullName)}</div><div class="sub">Login: ${escapeHtml(t.username || '—')}</div></td>
+        <td><div class="student-cell">${tAvatar(t)}<div><div class="name">${escapeHtml(t.fullName)}</div><div class="sub">${escapeHtml(t.position || 'O\'qituvchi')} • Login: ${escapeHtml(t.username || '—')}</div></div></div></td>
         <td>${(t.subjects || []).map((s) => `<span class="badge badge-blue" style="margin:2px">${escapeHtml(s)}</span>`).join('') || '—'}</td>
         <td>${(t.classes || []).map((c) => `<span class="badge badge-purple" style="margin:2px">${escapeHtml(c)}</span>`).join('') || '—'}</td>
         <td class="actions">
@@ -963,8 +965,15 @@ initContact('contactTop');
     showModal(`
       <div class="modal-title">${t ? "O'qituvchini tahrirlash" : "Yangi o'qituvchi"}</div>
       <div class="form-group"><label>To'liq ismi *</label><input id="tName" value="${escapeHtml((t && t.fullName) || '')}" placeholder="Masalan: Sobirov Aziz Olimovich"></div>
+      <div class="form-group"><label>Lavozim</label><input id="tPosition" value="${escapeHtml((t && t.position) || '')}" placeholder="masalan: Matematika o'qituvchisi"></div>
       <div class="form-group"><label>Fanlari</label><div class="chip-group">${subjBoxes}</div></div>
       <div class="form-group"><label>Sinflari</label><div class="chip-group">${classBoxes}</div></div>
+      <div class="form-grid">
+        <div class="form-group"><label>Rasm</label><div style="display:flex;align-items:center;gap:12px">
+          <div id="tPhotoPrev">${t ? tAvatar(t) : '<span class="avatar">A</span>'}</div>
+          <input type="file" id="tPhotoInp" accept="image/*" style="font-size:13px">
+        </div></div>
+      </div>
       <div class="form-grid">
         <div class="form-group"><label>Login (bo'masa avtomatik)</label><input id="tUser" value="${escapeHtml((t && t.username) || '')}" placeholder="ixtiyoriy"></div>
         <div class="form-group"><label>Parol (bo'masa avtomatik)</label><input id="tPass" placeholder="kamida 4 belgi"></div>
@@ -974,6 +983,19 @@ initContact('contactTop');
         <button class="btn btn-primary" id="tSave">${t ? 'Saqlash' : "Qo'shish"}</button>
       </div>`);
 
+    const tPhotoInp = document.getElementById('tPhotoInp');
+    if (tPhotoInp) {
+      tPhotoInp.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          document.getElementById('tPhotoPrev').innerHTML = '<img class="avatar" style="width:64px;height:64px;border-radius:50%;object-fit:cover" src="' + ev.target.result + '">';
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
     if (t) {
       const userInput = document.getElementById('tUser');
       userInput.addEventListener('input', () => {});
@@ -981,20 +1003,32 @@ initContact('contactTop');
 
     document.getElementById('tSave').addEventListener('click', async () => {
       const fullName = document.getElementById('tName').value.trim();
-      if (!fullName) return toast("Ism kiritilmagаn", 'error');
+      if (!fullName) return toast("Ism kiritilmagan", 'error');
+      const position = document.getElementById('tPosition').value.trim();
       const subjects = [...document.querySelectorAll('.t-subj:checked')].map((x) => x.value);
       const classesSel = [...document.querySelectorAll('.t-class:checked')].map((x) => x.value);
-      const body = { fullName, subjects, classes: classesSel };
+      const body = { fullName, position, subjects, classes: classesSel };
       const username = document.getElementById('tUser').value.trim();
       const password = document.getElementById('tPass').value;
+      const photoFile = tPhotoInp ? tPhotoInp.files[0] : null;
       try {
         if (t) {
           await API.put('/api/teachers/' + t.id, body);
-          toast('Saqlanmаy');
+          if (photoFile) {
+            const fd = new FormData();
+            fd.append('photo', photoFile);
+            await API.post('/api/teachers/' + t.id + '/photo', fd, true);
+          }
+          toast('Saqlanmadi');
         } else {
           if (username) body.username = username;
           if (password) body.password = password;
           const r = await API.post('/api/teachers', body);
+          if (photoFile) {
+            const fd = new FormData();
+            fd.append('photo', photoFile);
+            await API.post('/api/teachers/' + r.teacher.id + '/photo', fd, true);
+          }
           closeModal();
           showTeacherCredentials(r);
         }
@@ -1049,6 +1083,149 @@ initContact('contactTop');
     await API.del('/api/teachers/' + id);
     toast("O'qituvchi o'chirildi");
     await renderTeachers();
+  }
+
+  function tAvatar(t) {
+    const initials = ((t.fullName || '').split(' ').map((x) => x[0]).join('') || 'T').slice(0, 2).toUpperCase();
+    if (t.photo) return `<img class="avatar" style="border-radius:50%;object-fit:cover" src="${escapeHtml(t.photo)}" alt="foto">`;
+    return `<span class="avatar" style="border-radius:50%">${escapeHtml(initials)}</span>`;
+  }
+
+  // ---------- SHIFOKORLAR ----------
+  async function renderDoctors() {
+    const doctors = await API.get('/api/doctors');
+
+    topbarActions.innerHTML = `<div class="toolbar">
+      <button class="btn btn-primary" onclick="window.appDoctorModal()">${ICONS.students.replace('width="18"', 'width="16"')} Shifokor qo'shish</button>
+    </div>`;
+
+    if (!doctors.length) {
+      content.innerHTML = `<div class="panel"><div class="empty-state"><h4>Hali shifokorlar yo'q</h4><p class="muted">Birinchi shifokorni qo'shing — u 086-formalarni nazorat qiladi va kunlik sog'liq tekshiruvini olib boradi.</p></div></div>`;
+      return;
+    }
+
+    const rows = doctors.map((d) => `
+      <tr>
+        <td><div class="student-cell">${tAvatar(d)}<div><div class="name">${escapeHtml(d.fullName)}</div><div class="sub">${escapeHtml(d.position || 'Shifokor')} • Login: ${escapeHtml(d.username || '—')}</div></div></div></td>
+        <td class="actions">
+          <button class="btn btn-outline btn-sm" onclick="window.appDoctorCred(${d.id})">Kirish ma'lumotlari</button>
+          <button class="btn btn-outline btn-sm" onclick="window.appDoctorModal(${d.id})">Tahrirlash</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="window.appDelDoctor(${d.id})">O'chirish</button>
+        </td>
+      </tr>`).join('');
+
+    content.innerHTML = `<div class="panel"><div class="table-wrap"><table>
+      <thead><tr><th>Shifokor</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div></div>`;
+  }
+
+  async function doctorModal(id) {
+    const doctors = await API.get('/api/doctors');
+    const d = id != null ? doctors.find((x) => x.id === id) : null;
+
+    showModal(`
+      <div class="modal-title">${d ? 'Shifokorni tahrirlash' : "Yangi shifokor"}</div>
+      <div class="form-group"><label>To'liq ismi *</label><input id="dName" value="${escapeHtml((d && d.fullName) || '')}" placeholder="Masalan: Karimova Malika Davronovna"></div>
+      <div class="form-group"><label>Lavozim</label><input id="dPosition" value="${escapeHtml((d && d.position) || '')}" placeholder="masalan: Tibbiy xodim"></div>
+      <div class="form-grid">
+        <div class="form-group"><label>Rasm</label><div style="display:flex;align-items:center;gap:12px">
+          <div id="dPhotoPrev">${d ? tAvatar(d) : '<span class="avatar" style="border-radius:50%">SH</span>'}</div>
+          <input type="file" id="dPhotoInp" accept="image/*" style="font-size:13px">
+        </div></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group"><label>Login (bo'masa avtomatik)</label><input id="dUser" value="${escapeHtml((d && d.username) || '')}" placeholder="ixtiyoriy"></div>
+        <div class="form-group"><label>Parol (bo'masa avtomatik)</label><input id="dPass" placeholder="kamida 4 belgi"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="window.appCloseModal()">Bekor qilish</button>
+        <button class="btn btn-primary" id="dSave">${d ? 'Saqlash' : "Qo'shish"}</button>
+      </div>`);
+
+    const dPhotoInp = document.getElementById('dPhotoInp');
+    if (dPhotoInp) {
+      dPhotoInp.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          document.getElementById('dPhotoPrev').innerHTML = '<img class="avatar" style="width:64px;height:64px;border-radius:50%;object-fit:cover" src="' + ev.target.result + '">';
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    document.getElementById('dSave').addEventListener('click', async () => {
+      const fullName = document.getElementById('dName').value.trim();
+      if (!fullName) return toast("Ism kiritilmagan", 'error');
+      const position = document.getElementById('dPosition').value.trim();
+      const body = { fullName, position };
+      const username = document.getElementById('dUser').value.trim();
+      const password = document.getElementById('dPass').value;
+      const photoFile = dPhotoInp ? dPhotoInp.files[0] : null;
+      try {
+        if (d) {
+          await API.put('/api/doctors/' + d.id, body);
+          if (photoFile) {
+            const fd = new FormData();
+            fd.append('photo', photoFile);
+            await API.post('/api/doctors/' + d.id + '/photo', fd, true);
+          }
+          toast('Saqlanmadi');
+        } else {
+          if (username) body.username = username;
+          if (password) body.password = password;
+          const r = await API.post('/api/doctors', body);
+          if (photoFile) {
+            const fd = new FormData();
+            fd.append('photo', photoFile);
+            await API.post('/api/doctors/' + r.doctor.id + '/photo', fd, true);
+          }
+          closeModal();
+          doctorCredShow(r.username, r.password);
+        }
+        await renderDoctors();
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    });
+  }
+
+  function doctorCredShow(username, password) {
+    showModal(`
+      <div class="modal-title">Yangi shifokor tayyor</div>
+      <div class="cred-card">
+        <div class="cred-row"><span>Login</span><div><code id="credU">${escapeHtml(username)}</code><button class="btn btn-ghost btn-sm" onclick="window.appCopyTxt('credU')">Nusxa</button></div></div>
+        <div class="cred-row"><span>Parol</span><div><code id="credP">${escapeHtml(password)}</code><button class="btn btn-ghost btn-sm" onclick="window.appCopyTxt('credP')">Nusxa</button></div></div>
+      </div>
+      <div class="hint">Ma'lumotni shifokorga yetkazing — u doctor paneliga shular bilan kiradi.</div>
+      <div class="modal-actions"><button class="btn btn-primary" onclick="window.appCloseModal()">Yopish</button></div>`);
+  }
+
+  async function doctorCred(id) {
+    const doctors = await API.get('/api/doctors');
+    const d = doctors.find((x) => x.id === id);
+    if (!d) return;
+    showModal(`
+      <div class="modal-title">Kirish ma'lumotlari</div>
+      <div class="form-group"><label>Login</label><div style="display:flex;gap:8px"><code id="dcU" style="flex:1">${escapeHtml(d.username || '')}</code><button class="btn btn-ghost btn-sm" onclick="window.appCopyTxt('dcU')">Nusxa</button></div></div>
+      <div class="form-group"><label>Parol</label><div class="hint">Eski parolni ko'rish mumkin emas. "Yangi parol" tugmasi yangisini yaratib ko'rsatadi.</div></div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="window.appCloseModal()">Bekor</button>
+        <button class="btn btn-primary" id="dcRegen">Yangi parol yaratish</button>
+      </div>`);
+    document.getElementById('dcRegen').addEventListener('click', async () => {
+      const r = await API.post('/api/doctors/' + id + '/credentials', {});
+      doctorCredShow(r.username, r.password);
+    });
+  }
+
+  async function deleteDoctor(id) {
+    if (!confirm('Shifokorni va uning hisobini o\'chirasizmi?')) return;
+    await API.del('/api/doctors/' + id);
+    toast('Shifokor o\'chirildi');
+    await renderDoctors();
   }
 
   // ---------- FANLAR ----------
@@ -1170,6 +1347,9 @@ initContact('contactTop');
   window.appTeacherModal = (id) => teacherModal(id);
   window.appTeacherCred = (id) => teacherCred(id);
   window.appDelTeacher = (id) => deleteTeacher(id);
+  window.appDoctorModal = (id) => doctorModal(id);
+  window.appDoctorCred = (id) => doctorCred(id);
+  window.appDelDoctor = (id) => deleteDoctor(id);
   window.appAddSubject = () => subjectModal();
   window.appEditSubject = (idx) => subjectModal(idx);
   window.appDelSubject = (idx) => deleteSubject(idx);

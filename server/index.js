@@ -272,6 +272,26 @@ app.get('/api/teacher/me', authRequired, teacherOnly, (req, res) => {
   res.json({ teacher, user: { fullName: req.user.fullName, username: req.user.username } });
 });
 
+app.put('/api/teacher/me', authRequired, teacherOnly, (req, res) => {
+  const teacher = currentTeacher(req);
+  if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+  const b = req.body || {};
+  if (b.position !== undefined) {
+    teacher.position = String(b.position || '').trim();
+    db.saveCollection('teachers');
+  }
+  res.json({ ok: true, teacher });
+});
+
+app.post('/api/teacher/photo', authRequired, teacherOnly, upload.single('photo'), (req, res) => {
+  const teacher = currentTeacher(req);
+  if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+  if (!req.file) return res.status(400).json({ error: 'Rasm yuklanmadi' });
+  teacher.photo = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+  db.saveCollection('teachers');
+  res.json({ photo: teacher.photo });
+});
+
 app.post('/api/teachers', authRequired, adminOnly, (req, res) => {
   const b = req.body || {};
   const fullName = String(b.fullName || '').trim();
@@ -280,6 +300,8 @@ app.post('/api/teachers', authRequired, adminOnly, (req, res) => {
   const teacher = {
     id: db.nextId('teachers'),
     fullName,
+    position: String(b.position || '').trim(),
+    photo: b.photo || null,
     subjects: (Array.isArray(b.subjects) ? b.subjects : []).map((s) => String(s).trim()).filter(Boolean),
     classes: (Array.isArray(b.classes) ? b.classes : []).map((s) => String(s).trim()).filter(Boolean),
     createdAt: new Date().toISOString(),
@@ -348,6 +370,8 @@ app.put('/api/teachers/:id', authRequired, adminOnly, (req, res) => {
   if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
   const b = req.body || {};
   if (b.fullName !== undefined) teacher.fullName = String(b.fullName).trim();
+  if (b.position !== undefined) teacher.position = String(b.position || '').trim();
+  if (b.photo !== undefined) teacher.photo = b.photo || null;
   if (b.subjects !== undefined) teacher.subjects = (Array.isArray(b.subjects) ? b.subjects : []).map((s) => String(s).trim()).filter(Boolean);
   if (b.classes !== undefined) teacher.classes = (Array.isArray(b.classes) ? b.classes : []).map((s) => String(s).trim()).filter(Boolean);
   const user = db.store.users.find((u) => u.teacherId === teacher.id);
@@ -364,6 +388,265 @@ app.delete('/api/teachers/:id', authRequired, adminOnly, (req, res) => {
   db.store.tests = db.store.tests.filter((t) => t.teacherId !== id);
   db.store.teacher_attendance = db.store.teacher_attendance.filter((a) => a.teacherId !== id);
   db.saveAll();
+  res.json({ ok: true });
+});
+
+// ---------- Shifokorlar ----------
+function doctorOnly(req, res, next) {
+  if (req.user.role !== 'doctor') return res.status(403).json({ error: 'Ruxsat yo`q' });
+  next();
+}
+
+function addMonths(dateStr, months) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
+
+function medicalView(m) {
+  if (!m) return { hasForm: false, status: 'none', expiresAt: null, lastCheckedAt: null };
+  if (!m.form086) return { hasForm: false, status: 'none', expiresAt: null, lastCheckedAt: m.lastCheckedAt || null };
+  const expired = !m.expiresAt || m.expiresAt < new Date().toISOString().slice(0, 10);
+  return {
+    hasForm: true,
+    status: expired ? 'expired' : 'ok',
+    expiresAt: m.expiresAt || null,
+    lastCheckedAt: m.lastCheckedAt || null,
+  };
+}
+
+app.get('/api/doctors', authRequired, adminOnly, (req, res) => {
+  const list = db.store.doctors.map((d) => {
+    const user = db.store.users.find((u) => u.doctorId === d.id);
+    return { ...d, username: user ? user.username : null };
+  });
+  res.json(list);
+});
+
+app.post('/api/doctors', authRequired, adminOnly, (req, res) => {
+  const b = req.body || {};
+  const fullName = String(b.fullName || '').trim();
+  if (!fullName) return res.status(400).json({ error: 'To`liq ism majburiy' });
+
+  const doctor = {
+    id: db.nextId('doctors'),
+    fullName,
+    position: String(b.position || '').trim(),
+    photo: b.photo || null,
+    createdAt: new Date().toISOString(),
+  };
+  db.store.doctors.push(doctor);
+
+  let username = b.username ? String(b.username).trim().toLowerCase() : makeUsername(fullName.split(' ')[0], fullName.split(' ')[1] || '');
+  username = ensureUniqueUsername(username || makeUsername('shifokor', String(doctor.id)));
+  const password = b.password && String(b.password).length >= 4 ? String(b.password) : makePassword(8);
+
+  const user = {
+    id: db.nextId('users'),
+    username,
+    passwordHash: db.hashPassword(password),
+    role: 'doctor',
+    fullName,
+    doctorId: doctor.id,
+    studentId: null,
+    teacherId: null,
+  };
+  db.store.users.push(user);
+
+  db.saveCollection('doctors');
+  db.saveCollection('users');
+  res.status(201).json({ ok: true, doctor, username, password });
+});
+
+app.post('/api/doctors/:id/credentials', authRequired, adminOnly, (req, res) => {
+  const doctor = db.store.doctors.find((d) => d.id === Number(req.params.id));
+  if (!doctor) return res.status(404).json({ error: 'Shifokor topilmadi' });
+
+  let user = db.store.users.find((u) => u.doctorId === doctor.id);
+  if (!user) {
+    const base = makeUsername(doctor.fullName.split(' ')[0], doctor.fullName.split(' ')[1] || '');
+    user = {
+      id: db.nextId('users'),
+      username: ensureUniqueUsername(base || 'shifokor'),
+      passwordHash: null,
+      role: 'doctor',
+      fullName: doctor.fullName,
+      doctorId: doctor.id,
+    };
+    db.store.users.push(user);
+  }
+
+  const b = req.body || {};
+  if (b.username && String(b.username).trim()) {
+    const uname = String(b.username).trim().toLowerCase();
+    const taken = db.store.users.find((u) => u.username === uname && u.id !== user.id);
+    if (taken) return res.status(400).json({ error: 'Bu login band, boshqasini tanlang' });
+    user.username = uname;
+  }
+
+  if (b.password) {
+    if (String(b.password).length < 4) return res.status(400).json({ error: 'Parol kamida 4 ta belgi' });
+    user.passwordHash = db.hashPassword(String(b.password));
+  } else {
+    user.passwordHash = db.hashPassword(makePassword(8));
+  }
+  if (user.fullName !== doctor.fullName) user.fullName = doctor.fullName;
+
+  db.saveCollection('users');
+  res.json({ username: user.username, password: b.password ? String(b.password) : undefined, fresh: !b.password });
+});
+
+app.put('/api/doctors/:id', authRequired, adminOnly, (req, res) => {
+  const doctor = db.store.doctors.find((d) => d.id === Number(req.params.id));
+  if (!doctor) return res.status(404).json({ error: 'Shifokor topilmadi' });
+  const b = req.body || {};
+  if (b.fullName !== undefined) doctor.fullName = String(b.fullName).trim();
+  if (b.position !== undefined) doctor.position = String(b.position || '').trim();
+  if (b.photo !== undefined) doctor.photo = b.photo || null;
+  const user = db.store.users.find((u) => u.doctorId === doctor.id);
+  if (user) user.fullName = doctor.fullName;
+  db.saveCollection('doctors');
+  db.saveCollection('users');
+  res.json({ ok: true });
+});
+
+app.post('/api/doctors/:id/photo', authRequired, adminOnly, upload.single('photo'), (req, res) => {
+  const doctor = db.store.doctors.find((d) => d.id === Number(req.params.id));
+  if (!doctor) return res.status(404).json({ error: 'Shifokor topilmadi' });
+  if (!req.file) return res.status(400).json({ error: 'Rasm yuklanmadi' });
+  doctor.photo = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+  db.saveCollection('doctors');
+  res.json({ photo: doctor.photo });
+});
+
+app.delete('/api/doctors/:id', authRequired, adminOnly, (req, res) => {
+  const id = Number(req.params.id);
+  db.store.doctors = db.store.doctors.filter((d) => d.id !== id);
+  db.store.users = db.store.users.filter((u) => !(u.role === 'doctor' && u.doctorId === id));
+  db.saveAll();
+  res.json({ ok: true });
+});
+
+// ---------- Shifokor paneli ----------
+app.get('/api/doctor/me', authRequired, doctorOnly, (req, res) => {
+  const doctor = db.store.doctors.find((d) => d.id === req.user.doctorId);
+  if (!doctor) return res.status(404).json({ error: 'Shifokor topilmadi' });
+  res.json({ doctor, user: { fullName: req.user.fullName, username: req.user.username } });
+});
+
+app.put('/api/doctor/me', authRequired, doctorOnly, (req, res) => {
+  const doctor = db.store.doctors.find((d) => d.id === req.user.doctorId);
+  if (!doctor) return res.status(404).json({ error: 'Shifokor topilmadi' });
+  const b = req.body || {};
+  if (b.position !== undefined) {
+    doctor.position = String(b.position || '').trim();
+    db.saveCollection('doctors');
+  }
+  res.json({ ok: true, doctor });
+});
+
+app.post('/api/doctor/photo', authRequired, doctorOnly, upload.single('photo'), (req, res) => {
+  const doctor = db.store.doctors.find((d) => d.id === req.user.doctorId);
+  if (!doctor) return res.status(404).json({ error: 'Shifokor topilmadi' });
+  if (!req.file) return res.status(400).json({ error: 'Rasm yuklanmadi' });
+  doctor.photo = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+  db.saveCollection('doctors');
+  res.json({ photo: doctor.photo });
+});
+
+// Sog'liq kartasi: o'quvchilar + 086 holati + bugungi tekshiruv
+app.get('/api/doctor/students', authRequired, doctorOnly, (req, res) => {
+  const date = String(req.query.date || new Date().toISOString().slice(0, 10));
+  const students = db.store.students.map((s) => {
+    const med = medicalView(db.store.medical.find((m) => m.studentId === s.id));
+    const check = db.store.healthchecks.find((h) => h.studentId === s.id && h.date === date);
+    return {
+      id: s.id,
+      lastName: s.lastName,
+      firstName: s.firstName,
+      patronymic: s.patronymic || '',
+      className: s.className || '(sinsiz)',
+      photo: s.photo || null,
+      medical: med,
+      health: check ? { healthOk: check.healthOk, note: check.note || '' } : null,
+    };
+  });
+  res.json(students);
+});
+
+// 086-forma (6 oyga amal qiladi)
+app.post('/api/doctor/medical', authRequired, doctorOnly, (req, res) => {
+  const b = req.body || {};
+  const studentId = Number(b.studentId);
+  const student = db.store.students.find((s) => s.id === studentId);
+  if (!student) return res.status(400).json({ error: 'O`quvchi topilmadi' });
+
+  let rec = db.store.medical.find((m) => m.studentId === studentId);
+  if (!rec) {
+    rec = { id: db.nextId('medical'), studentId };
+    db.store.medical.push(rec);
+  }
+
+  const form086 = !!b.form086;
+  rec.form086 = form086;
+  const today = new Date().toISOString().slice(0, 10);
+  if (form086) {
+    rec.lastCheckedAt = today;
+    rec.expiresAt = b.expiresAt && String(b.expiresAt).trim() ? String(b.expiresAt).trim() : addMonths(today, 6);
+  } else {
+    rec.expiresAt = null;
+  }
+
+  db.saveCollection('medical');
+  res.json({ ok: true, medical: medicalView(rec) });
+});
+
+app.get('/api/doctor/medical', authRequired, doctorOnly, (req, res) => {
+  res.json(db.store.medical.map((m) => ({ studentId: m.studentId, form086: !!m.form086, expiresAt: m.expiresAt || null, lastCheckedAt: m.lastCheckedAt || null })));
+});
+
+// Kunlik sog'liq tekshiruvi
+app.get('/api/doctor/healthchecks', authRequired, doctorOnly, (req, res) => {
+  const date = String(req.query.date || new Date().toISOString().slice(0, 10));
+  const list = db.store.healthchecks.filter((h) => h.date === date).map((h) => {
+    const s = db.store.students.find((x) => x.id === h.studentId);
+    return { ...h, studentName: s ? `${s.lastName} ${s.firstName}` : '' };
+  });
+  res.json(list);
+});
+
+app.post('/api/doctor/healthchecks', authRequired, doctorOnly, (req, res) => {
+  const b = req.body || {};
+  const studentId = Number(b.studentId);
+  const student = db.store.students.find((s) => s.id === studentId);
+  if (!student) return res.status(400).json({ error: 'O`quvchi topilmadi' });
+  const date = String(b.date || new Date().toISOString().slice(0, 10));
+  const healthOk = !!b.healthOk;
+
+  const existing = db.store.healthchecks.find((h) => h.studentId === studentId && h.date === date);
+  if (existing) {
+    existing.healthOk = healthOk;
+    existing.note = String(b.note || '').trim();
+    existing.checkedAt = new Date().toISOString();
+  } else {
+    db.store.healthchecks.push({
+      id: db.nextId('healthchecks'),
+      studentId,
+      date,
+      healthOk,
+      note: String(b.note || '').trim(),
+      checkedAt: new Date().toISOString(),
+    });
+  }
+  db.saveCollection('healthchecks');
+  res.json({ ok: true });
+});
+
+app.delete('/api/doctor/healthchecks', authRequired, doctorOnly, (req, res) => {
+  const studentId = Number(req.query.studentId);
+  const date = String(req.query.date || new Date().toISOString().slice(0, 10));
+  db.store.healthchecks = db.store.healthchecks.filter((h) => !(h.studentId === studentId && h.date === date));
+  db.saveCollection('healthchecks');
   res.json({ ok: true });
 });
 
@@ -825,6 +1108,144 @@ app.get('/api/export/class', authRequired, adminOnly, async (req, res) => {
   res.send(buffer);
 });
 
+// ---------- Oylik baholarni Word (docx) qilib yuklab olish ----------
+const monthNamesUz = () => ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
+app.get('/api/export/grades', authRequired, async (req, res) => {
+  const className = String(req.query.className || '').trim();
+  const subject = String(req.query.subject || '').trim();
+  const month = Number(req.query.month);
+  const year = Number(req.query.year);
+  if (!className || !subject || !month || !year) return res.status(400).json({ error: 'Sinf, fan, oy va yil ko`rsatilishi shart' });
+
+  if (req.user.role === 'teacher') {
+    const teacher = currentTeacher(req);
+    if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+    if (!canClass(teacher, className)) return res.status(403).json({ error: 'Bu sinf sizga biriktirilmagan' });
+    if (!teacher.subjects.includes(subject)) return res.status(403).json({ error: 'Bu fan sizga biriktirilmagan' });
+  } else if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Ruxsat yo`q' });
+  }
+
+  const students = db.store.students
+    .filter((s) => (s.className || '(sinsiz)') === className)
+    .sort((a, b) => a.lastName.localeCompare(b.lastName, 'uz'));
+  if (!students.length) return res.status(400).json({ error: 'Bu sinfda o`quvchi yo`q' });
+
+  const prefix = `${year}-${String(month).padStart(2, '0')}`;
+  const ids = new Set(students.map((s) => s.id));
+  const grades = db.store.grades.filter((g) => ids.has(g.studentId) && g.subject === subject && g.date.startsWith(prefix));
+  const map = {};
+  grades.forEach((g) => { map[g.studentId + '|' + g.date] = g.score; });
+
+  const W = ['Ya', 'Du', 'Se', 'Chor', 'Pay', 'Ju', 'Sha'];
+  const days = [];
+  const last = new Date(year, month, 0).getDate();
+  for (let d = 1; d <= last; d++) {
+    const dow = new Date(year, month - 1, d).getDay();
+    if (dow === 0) continue;
+    days.push({ date: `${prefix}-${String(d).padStart(2, '0')}`, day: d, weekday: W[dow] });
+  }
+
+  const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, TableLayoutType, VerticalAlign, BorderStyle, PageOrientation, AlignmentType } = require('docx');
+  const TNR = 'Times New Roman';
+  const FN = (size) => ({ font: TNR, size });
+  const PAGE_W = 16838, PAGE_H = 11906;
+  const LEFT_RIGHT = 567;
+  const USABLE = PAGE_W - LEFT_RIGHT * 2;
+  const NAME_COL = 3600, INDEX_COL = 560, AVG_COL = 900;
+  const DAY_COL = Math.max(560, Math.floor((USABLE - INDEX_COL - NAME_COL - AVG_COL) / Math.max(days.length, 1)));
+  const COLS = [INDEX_COL, NAME_COL, ...days.map(() => DAY_COL), AVG_COL];
+  const BORDER = { style: BorderStyle.SINGLE, size: 4, color: '000000' };
+
+  const cell = (text, opts = {}) =>
+    new TableCell({
+      width: { size: COLS[opts.col], type: WidthType.DXA },
+      verticalAlign: VerticalAlign.CENTER,
+      shading: opts.shading ? { fill: opts.shading, color: 'auto' } : undefined,
+      borders: { top: BORDER, bottom: BORDER, left: BORDER, right: BORDER },
+      children: [
+        new Paragraph({
+          alignment: opts.align || undefined,
+          spacing: { before: 20, after: 20 },
+          children: [new TextRun({ text, bold: !!(opts.bold || opts.header), ...FN(opts.size || 20) })],
+        }),
+      ],
+    });
+
+  const headerRow = new TableRow({
+    tableHeader: true,
+    children: [
+      cell('T/r', { col: 0, header: true, align: AlignmentType.CENTER, shading: 'DCE6F1' }),
+      cell("O'quvchi F.I.Sh.", { col: 1, header: true, shading: 'DCE6F1' }),
+      ...days.map((d) => cell(String(d.day), { col: 2, header: true, align: AlignmentType.CENTER, shading: 'DCE6F1', size: 18 })),
+      cell('Ort.', { col: COLS.length - 1, header: true, align: AlignmentType.CENTER, shading: 'DCE6F1' }),
+    ],
+  });
+
+  const bodyRows = students.map((s, i) => {
+    let sum = 0, n = 0;
+    const dayCells = days.map((d, idx) => {
+      const score = map[s.id + '|' + d.date];
+      if (score) { sum += score; n++; }
+      return cell(score ? String(score) : '', { col: 2 + idx, align: AlignmentType.CENTER, size: 18 });
+    });
+    const avg = n ? (sum / n).toFixed(1) : '';
+    return new TableRow({
+      children: [
+        cell(String(i + 1), { col: 0, align: AlignmentType.CENTER }),
+        cell(`${s.lastName} ${s.firstName}`.trim(), { col: 1 }),
+        ...dayCells,
+        cell(avg, { col: COLS.length - 1, align: AlignmentType.CENTER }),
+      ],
+    });
+  });
+
+  const names = monthNamesUz();
+  const doc = new Document({
+    styles: { default: { document: { run: { font: TNR, size: 20 } } } },
+    sections: [
+      {
+        properties: {
+          page: {
+            orientation: PageOrientation.LANDSCAPE,
+            size: { width: PAGE_W, height: PAGE_H },
+            margin: { top: LEFT_RIGHT, right: LEFT_RIGHT, bottom: LEFT_RIGHT, left: LEFT_RIGHT },
+          },
+        },
+        children: [
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 60 },
+            children: [new TextRun({ text: 'OLIMP-LIDER MAXSUS HARBIY SPORT KLUBI', bold: true, ...FN(28) })],
+          }),
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 60 },
+            children: [new TextRun({ text: `${className} sinf o\u2018quvchilarining "${subject}" fanidan baholari`, bold: true, ...FN(26) })],
+          }),
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 200 },
+            children: [new TextRun({ text: `${names[month - 1]} ${year}   |   O\u2018quvchilar soni: ${students.length}   |   Sana: ${new Date().toLocaleDateString('uz-UZ')}`, ...FN(22) })],
+          }),
+          new Table({
+            width: { size: USABLE, type: WidthType.DXA },
+            layout: TableLayoutType.FIXED,
+            columnWidths: COLS,
+            rows: [headerRow, ...bodyRows],
+          }),
+        ],
+      },
+    ],
+  });
+
+  const buffer = await Packer.toBuffer(doc);
+  const safeName = className.replace(/[^\w\d-]+/g, '_') || 'sinf';
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName}_${subject.replace(/\s+/g, '_')}_${month}_${year}.docx"`);
+  res.send(buffer);
+});
+
 app.post('/api/students/:id/photo', authRequired, adminOnly, upload.single('photo'), (req, res) => {
   const student = db.store.students.find((s) => s.id === Number(req.params.id));
   if (!student) return res.status(404).json({ error: 'O`quvchi topilmadi' });
@@ -833,6 +1254,15 @@ app.post('/api/students/:id/photo', authRequired, adminOnly, upload.single('phot
   student.photo = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
   db.saveCollection('students');
   res.json({ photo: student.photo });
+});
+
+app.post('/api/teachers/:id/photo', authRequired, adminOnly, upload.single('photo'), (req, res) => {
+  const teacher = db.store.teachers.find((t) => t.id === Number(req.params.id));
+  if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+  if (!req.file) return res.status(400).json({ error: 'Rasm yuklanmadi' });
+  teacher.photo = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+  db.saveCollection('teachers');
+  res.json({ photo: teacher.photo });
 });
 
 // ---------- Ota-ona login/parolini ko'rish va qayta yaratish ----------
@@ -1063,7 +1493,17 @@ app.get('/api/parent', authRequired, (req, res) => {
       };
     });
 
-  res.json({ student, grades, attendance, payments, subjectAverages, avgGrade, diary });
+  const teachers = db.store.teachers
+    .filter((t) => t.classes && t.classes.includes(student.className))
+    .map((t) => ({
+      id: t.id,
+      fullName: t.fullName,
+      position: t.position || '',
+      photo: t.photo || null,
+      subjects: t.subjects || [],
+    }));
+
+  res.json({ student, grades, attendance, payments, subjectAverages, avgGrade, diary, teachers });
 });
 
 // ---------- Statistika (dashbord) ----------

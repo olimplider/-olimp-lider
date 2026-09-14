@@ -18,6 +18,7 @@
     attendance: 'Davomat',
     diary: 'Kundalik',
     payments: 'To\'lovlar',
+    teachers: 'O\'qituvchilar',
   };
 
   async function loadData(force = false) {
@@ -44,6 +45,7 @@
       else if (section === 'grades') renderGrades();
       else if (section === 'attendance') renderAttendance();
       else if (section === 'diary') renderDiary();
+      else if (section === 'teachers') renderTeachers();
       else if (section === 'payments') renderPayments();
     } catch (e) {
       content.innerHTML = '<div class="alert-error" style="display:block;max-width:500px;margin:20px auto;">' + escapeHtml(e.message) + '</div>';
@@ -157,6 +159,33 @@
 
     content.innerHTML = `${hero()}
       ${days || '<div class="panel"><div class="empty-state"><h4>Hali kunlik yozuvlar yo\'q</h4><p class="muted">O\'qituvchi baho yoki davomat kiritganda, kundalik shaklida shu yerda ko\'rinadi.</p></div></div>'}`;
+  }
+
+  function renderTeachers() {
+    const list = data.teachers || [];
+    const cards = list.map((t) => {
+      const avatar = t.photo
+        ? '<img class="avatar" style="width:56px;height:56px;border-radius:50%;object-fit:cover" src="' + escapeHtml(t.photo) + '" alt="foto">'
+        : '<span class="avatar" style="width:56px;height:56px;border-radius:50%">' + escapeHtml((t.fullName.split(' ').map((x) => x[0]).join('') || 'T').slice(0, 2)) + '</span>';
+      return `
+        <div class="panel">
+          <div style="display:flex;gap:14px;align-items:center">
+            ${avatar}
+            <div>
+              <div style="font-weight:700;font-size:15px">${escapeHtml(t.fullName)}</div>
+              <div class="sub">${escapeHtml(t.position || 'O\'qituvchi')}</div>
+            </div>
+          </div>
+          <div class="panel-body" style="margin-top:6px">
+            <div class="sub" style="margin-bottom:6px">Dars o'tadigan fanlari:</div>
+            ${(t.subjects || []).map((s) => '<span class="badge badge-blue" style="margin:2px">' + escapeHtml(s) + '</span>').join('') || '<span class="muted">Fan biriktirilmagan</span>'}
+          </div>
+        </div>`;
+    }).join('');
+
+    content.innerHTML = `${hero()}
+      <div class="panel"><div class="panel-header"><h3>${escapeHtml(data.student.className)} sinf o'qituvchilari</h3><span class="badge badge-blue">${list.length} ta</span></div></div>
+      ${list.length ? cards : '<div class="panel"><div class="empty-state"><h4>Hali ma\'lumot yo\'q</h4><p class="muted">O\'qituvchilar sinfga biriktirilganda shu yerda ko\'rinadi.</p></div></div>'}`;
   }
 
   function renderPayments() {

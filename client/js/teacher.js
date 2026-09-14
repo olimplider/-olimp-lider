@@ -6,6 +6,19 @@
 
   document.getElementById('userInfo').textContent = '👤 ' + API.getFullName();
 
+  function tAvatar(p) {
+    const initials = ((p.fullName || '').split(' ').map((x) => x[0]).join('') || 'T').slice(0, 2).toUpperCase();
+    if (p.photo) return `<img class="avatar" style="border-radius:50%;object-fit:cover" src="${escapeHtml(p.photo)}" alt="foto">`;
+    return `<span class="avatar" style="border-radius:50%">${escapeHtml(initials)}</span>`;
+  }
+
+  function renderSidebarUser() {
+    if (!me) return;
+    document.getElementById('userInfo').innerHTML =
+      '<div style="display:flex;align-items:center;gap:10px">' + tAvatar(me.teacher) +
+      '<div><div>' + escapeHtml(me.teacher.fullName) + '</div><div class="sub" style="font-weight:400">' + escapeHtml(me.teacher.position || 'O\'qituvchi') + '</div></div></div>';
+  }
+
   const content = document.getElementById('content');
   const modalOverlay = document.getElementById('modalOverlay');
   const modalContent = document.getElementById('modalContent');
@@ -44,7 +57,10 @@
   modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
 
   async function loadMe() {
-    if (!me) me = await API.get('/api/teacher/me');
+    if (!me) {
+      me = await API.get('/api/teacher/me');
+      renderSidebarUser();
+    }
     return me;
   }
 
@@ -132,6 +148,19 @@
       </div>` : '';
 
     content.innerHTML = `
+      <div class="panel profile-card">
+        <div class="profile-avatar">${(me.teacher.photo
+          ? '<img class="avatar" style="width:64px;height:64px;border-radius:50%;object-fit:cover" src="' + escapeHtml(me.teacher.photo) + '" alt="foto">'
+          : '<span class="avatar" style="width:64px;height:64px;font-size:22px;border-radius:50%">' + escapeHtml(((me.teacher.fullName || 'T').split(' ').map((x) => x[0]).join('') || 'T').slice(0, 2).toUpperCase()) + '</span>')}</div>
+        <div class="profile-info">
+          <h3>${escapeHtml(me.teacher.fullName)}</h3>
+          <div class="sub">${escapeHtml(me.teacher.position || 'O\'qituvchi')}</div>
+          <div class="sub">Login: ${escapeHtml(me.user.username)}</div>
+        </div>
+        <div class="profile-actions">
+          <button class="btn btn-outline btn-sm" onclick="window.appProfileEdit()">Profilni tahrirlash</button>
+        </div>
+      </div>
       <div class="stats-grid">${classCards}</div>
       <div class="panel" style="background:linear-gradient(135deg,#4f46e5,#1e1b4b);color:#fff">
         <div class="topbar" style="position:static;background:transparent;border:0;padding:0 0 6px">
@@ -142,6 +171,57 @@
       ${panels}
       ${subjectList}
       ${topList}`;
+  }
+
+  // ---------- PROFIL ----------
+  function appProfileEdit() {
+    if (!me) return;
+    showModal(`
+      <div class="modal-title">Profilni tahrirlash</div>
+      <div class="form-group"><label>F.I.Sh.</label><input id="tpName" value="${escapeHtml(me.teacher.fullName)}" disabled></div>
+      <div class="form-group"><label>Lavozim</label><input id="tpPosition" value="${escapeHtml(me.teacher.position || '')}" placeholder="masalan: Matematika o'qituvchisi"></div>
+      <div class="form-group"><label>Rasm</label><div style="display:flex;align-items:center;gap:12px">
+        <div id="tpPhotoPrev">${me.teacher.photo
+          ? '<img class="avatar" style="width:64px;height:64px;border-radius:50%;object-fit:cover" src="' + escapeHtml(me.teacher.photo) + '" alt="foto">'
+          : '<span class="avatar" style="width:64px;height:64px;font-size:22px;border-radius:50%">' + escapeHtml(((me.teacher.fullName || 'T').split(' ').map((x) => x[0]).join('') || 'T').slice(0, 2).toUpperCase()) + '</span>'}</div>
+        <input type="file" id="tpPhotoInp" accept="image/*" style="font-size:13px">
+      </div></div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="window.appCloseModal()">Bekor</button>
+        <button class="btn btn-primary" id="tpSave">Saqlash</button>
+      </div>`);
+
+    const inp = document.getElementById('tpPhotoInp');
+    inp.addEventListener('change', (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = (ev) => { document.getElementById('tpPhotoPrev').innerHTML = '<img class="avatar" style="width:64px;height:64px;border-radius:50%;object-fit:cover" src="' + ev.target.result + '">'; };
+      r.readAsDataURL(f);
+    });
+
+    document.getElementById('tpSave').addEventListener('click', async () => {
+      const btn = document.getElementById('tpSave');
+      btn.disabled = true;
+      try {
+        const position = document.getElementById('tpPosition').value.trim();
+        await API.put('/api/teacher/me', { position });
+        const file = inp.files[0];
+        if (file) {
+          const fd = new FormData();
+          fd.append('photo', file);
+          await API.post('/api/teacher/photo', fd, true);
+        }
+        me = await API.get('/api/teacher/me');
+        renderSidebarUser();
+        closeModal();
+        toast('Profil saqlandi');
+        await renderDashboard();
+      } catch (e) {
+        toast(e.message, 'error');
+        btn.disabled = false;
+      }
+    });
   }
 
   // ---------- BAHOLAR (JURNAL) ----------
@@ -158,6 +238,7 @@
       <select id="jSubject">${subjectOptions('')}</select>
       <select id="jMonth">${renderMonthsSelect(now.getMonth() + 1)}</select>
       <select id="jYear">${renderYearsSelect()}</select>
+      <button class="btn btn-outline" onclick="window.appExportGrades()" title="Oylik baholarni Word hujjat qilib yuklab olish"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Word</button>
     </div>`;
 
     ['jClass', 'jSubject', 'jMonth', 'jYear'].forEach((id) => {
@@ -512,9 +593,37 @@
     navigate(s);
   };
   window.appCloseModal = closeModal;
+  window.appProfileEdit = () => appProfileEdit();
   window.appNewTest = () => newTestModal();
   window.appFillTest = (id) => fillTestModal(id);
   window.appDelTest = (id) => deleteTest(id);
+  window.appExportGrades = async () => {
+    if (!_jCurrent) {
+      toast('Avval sinf va fanni tanlang', 'error');
+      return;
+    }
+    toast('Word hujjat tayyorlanmoqda...');
+    try {
+      const q = 'className=' + encodeURIComponent(_jCurrent.className) +
+        '&subject=' + encodeURIComponent(_jCurrent.subject) +
+        '&month=' + _jCurrent.month + '&year=' + _jCurrent.year;
+      const res = await fetch('/api/export/grades?' + q, { headers: { Authorization: 'Bearer ' + API.getToken() } });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Yuklab olishda xato');
+      }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = (_jCurrent.className + '_' + _jCurrent.subject + '_' + _jCurrent.month + '_' + _jCurrent.year + '.docx').replace(/\s+/g, '_');
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      toast('Word fayl yuklab olindi');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
   window.appMarkAllPresent = () => markAllPresent();
   window.appJCell = (id, date, btn) => jCell(id, date, btn);
   window.appRefresh = async () => {
