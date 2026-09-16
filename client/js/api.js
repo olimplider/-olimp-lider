@@ -73,10 +73,24 @@ function todayStr() {
 
 function avatarHtml(student) {
   const initials = ((student.lastName || '') + (student.firstName || '')).slice(0, 2).toUpperCase();
-  if (student.photo) {
-    return `<img class="avatar" src="${escapeHtml(student.photo)}" alt="foto">`;
+  const src = student.photoUrl || student.photo;
+  if (src) {
+    return `<img class="avatar" src="${escapeHtml(src)}" alt="foto" loading="lazy">`;
   }
   return `<span class="avatar">${escapeHtml(initials)}</span>`;
+}
+
+async function compressImage(file, maxW, maxH, quality) {
+  if (!file || !file.type.startsWith('image/')) return file;
+  maxW = maxW || 400; maxH = maxH || 533; quality = quality || 0.7;
+  const bmp = await createImageBitmap(file);
+  let w = bmp.width, h = bmp.height;
+  if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+  if (h > maxH) { w = Math.round(w * maxH / h); h = maxH; }
+  const cvs = new OffscreenCanvas(w, h);
+  cvs.getContext('2d').drawImage(bmp, 0, 0, w, h);
+  const blob = await cvs.convertToBlob({ type: 'image/jpeg', quality });
+  return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
 }
 
 const ICONS = {

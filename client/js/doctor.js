@@ -45,8 +45,8 @@
 
   function personAvatar(p, size) {
     const initials = ((p.fullName || '').split(' ').map((x) => x[0]).join('') || 'DR').slice(0, 2).toUpperCase();
-    const img = p.photo
-      ? '<img class="avatar" style="width:64px;height:64px;border-radius:50%;object-fit:cover" src="' + escapeHtml(p.photo) + '" alt="foto">'
+    const img = (p.photoUrl || p.photo)
+      ? '<img class="avatar" style="width:64px;height:64px;border-radius:50%;object-fit:cover" src="' + escapeHtml(p.photoUrl || p.photo) + '" alt="foto" loading="lazy">'
       : '<span class="avatar" style="width:64px;height:64px;font-size:22px;border-radius:50%">' + escapeHtml(initials) + '</span>';
     return img;
   }
@@ -58,8 +58,8 @@
 
   async function refreshUserInfo() {
     const d = await loadMe();
-    const avatar = d.doctor.photo
-      ? '<img class="avatar" style="width:38px;height:38px;border-radius:50%;object-fit:cover" src="' + escapeHtml(d.doctor.photo) + '" alt="foto">'
+    const avatar = (d.doctor.photoUrl || d.doctor.photo)
+      ? '<img class="avatar" style="width:38px;height:38px;border-radius:50%;object-fit:cover" src="' + escapeHtml(d.doctor.photoUrl || d.doctor.photo) + '" alt="foto" loading="lazy">'
       : '<span class="avatar" style="width:38px;height:38px;font-size:14px;border-radius:50%">' + escapeHtml((d.doctor.fullName || 'DR').slice(0, 2).toUpperCase()) + '</span>';
     document.getElementById('userInfo').innerHTML =
       '<div style="display:flex;align-items:center;gap:10px">' + avatar +
@@ -342,8 +342,9 @@
         await API.put('/api/doctor/me', { position });
         const file = inp ? inp.files[0] : null;
         if (file) {
+          const compressed = await compressImage(file, 400, 533, 0.7);
           const fd = new FormData();
-          fd.append('photo', file);
+          fd.append('photo', compressed);
           await API.post('/api/doctor/photo', fd, true);
         }
         me = null;

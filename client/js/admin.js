@@ -284,8 +284,9 @@
 
         const photoFile = pp ? pp.files[0] : null;
         if (photoFile && isEdit) {
+          const compressed = await compressImage(photoFile, 400, 533, 0.7);
           const fd = new FormData();
-          fd.append('photo', photoFile);
+          fd.append('photo', compressed);
           await API.post('/api/students/' + s.id + '/photo', fd, true);
         }
 
@@ -1011,12 +1012,13 @@ initContact('contactTop');
       const username = document.getElementById('tUser').value.trim();
       const password = document.getElementById('tPass').value;
       const photoFile = tPhotoInp ? tPhotoInp.files[0] : null;
+      const compressed = photoFile ? await compressImage(photoFile, 400, 533, 0.7) : null;
       try {
         if (t) {
           await API.put('/api/teachers/' + t.id, body);
-          if (photoFile) {
+          if (compressed) {
             const fd = new FormData();
-            fd.append('photo', photoFile);
+            fd.append('photo', compressed);
             await API.post('/api/teachers/' + t.id + '/photo', fd, true);
           }
           toast('Saqlanmadi');
@@ -1024,9 +1026,9 @@ initContact('contactTop');
           if (username) body.username = username;
           if (password) body.password = password;
           const r = await API.post('/api/teachers', body);
-          if (photoFile) {
+          if (compressed) {
             const fd = new FormData();
-            fd.append('photo', photoFile);
+            fd.append('photo', compressed);
             await API.post('/api/teachers/' + r.teacher.id + '/photo', fd, true);
           }
           closeModal();
@@ -1087,7 +1089,8 @@ initContact('contactTop');
 
   function tAvatar(t) {
     const initials = ((t.fullName || '').split(' ').map((x) => x[0]).join('') || 'T').slice(0, 2).toUpperCase();
-    if (t.photo) return `<img class="avatar" style="border-radius:50%;object-fit:cover" src="${escapeHtml(t.photo)}" alt="foto">`;
+    const src = t.photoUrl || t.photo;
+    if (src) return `<img class="avatar" style="border-radius:50%;object-fit:cover" src="${escapeHtml(src)}" alt="foto" loading="lazy">`;
     return `<span class="avatar" style="border-radius:50%">${escapeHtml(initials)}</span>`;
   }
 
@@ -1164,12 +1167,13 @@ initContact('contactTop');
       const username = document.getElementById('dUser').value.trim();
       const password = document.getElementById('dPass').value;
       const photoFile = dPhotoInp ? dPhotoInp.files[0] : null;
+      const compressed = photoFile ? await compressImage(photoFile, 400, 533, 0.7) : null;
       try {
         if (d) {
           await API.put('/api/doctors/' + d.id, body);
-          if (photoFile) {
+          if (compressed) {
             const fd = new FormData();
-            fd.append('photo', photoFile);
+            fd.append('photo', compressed);
             await API.post('/api/doctors/' + d.id + '/photo', fd, true);
           }
           toast('Saqlanmadi');
@@ -1177,9 +1181,9 @@ initContact('contactTop');
           if (username) body.username = username;
           if (password) body.password = password;
           const r = await API.post('/api/doctors', body);
-          if (photoFile) {
+          if (compressed) {
             const fd = new FormData();
-            fd.append('photo', photoFile);
+            fd.append('photo', compressed);
             await API.post('/api/doctors/' + r.doctor.id + '/photo', fd, true);
           }
           closeModal();

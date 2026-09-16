@@ -60,6 +60,31 @@ app.use(express.static(CLIENT_DIR, {
 
 app.get('/', (req, res) => res.redirect('/login.html'));
 
+// ---------- Photo endpoints (base64 dan raw image + cache) ----------
+function sendPhoto(record, res) {
+  if (!record || !record.photo) return res.status(404).json({ error: 'Rasm topilmadi' });
+  const m = String(record.photo).match(/^data:([^;]+);base64,(.+)$/);
+  if (!m) return res.status(404).json({ error: 'Noto\'g\'ri rasm formati' });
+  const buf = Buffer.from(m[2], 'base64');
+  res.setHeader('Content-Type', m[1]);
+  res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+  res.setHeader('ETag', require('crypto').createHash('md5').update(buf).digest('hex'));
+  res.send(buf);
+}
+
+app.get('/api/students/:id/photo', (req, res) => {
+  const rec = db.store.students.find((s) => s.id === Number(req.params.id));
+  sendPhoto(rec, res);
+});
+app.get('/api/teachers/:id/photo', (req, res) => {
+  const rec = db.store.teachers.find((t) => t.id === Number(req.params.id));
+  sendPhoto(rec, res);
+});
+app.get('/api/doctors/:id/photo', (req, res) => {
+  const rec = db.store.doctors.find((d) => d.id === Number(req.params.id));
+  sendPhoto(rec, res);
+});
+
 // ---------- Auth ----------
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -262,7 +287,8 @@ function canClass(teacher, className) {
 app.get('/api/teachers', authRequired, adminOnly, (req, res) => {
   const list = db.store.teachers.map((t) => {
     const user = db.store.users.find((u) => u.teacherId === t.id);
-    return { ...t, username: user ? user.username : null };
+    const { photo, ...rest } = t;
+    return { ...rest, photoUrl: photo ? '/api/teachers/' + t.id + '/photo' : null, username: user ? user.username : null };
   });
   res.json(list);
 });
@@ -419,7 +445,8 @@ function medicalView(m) {
 app.get('/api/doctors', authRequired, adminOnly, (req, res) => {
   const list = db.store.doctors.map((d) => {
     const user = db.store.users.find((u) => u.doctorId === d.id);
-    return { ...d, username: user ? user.username : null };
+    const { photo, ...rest } = d;
+    return { ...rest, photoUrl: photo ? '/api/doctors/' + d.id + '/photo' : null, username: user ? user.username : null };
   });
   res.json(list);
 });
@@ -567,7 +594,7 @@ app.get('/api/doctor/students', authRequired, doctorOnly, (req, res) => {
       firstName: s.firstName,
       patronymic: s.patronymic || '',
       className: s.className || '(sinsiz)',
-      photo: s.photo || null,
+      photoUrl: s.photo ? '/api/students/' + s.id + '/photo' : null,
       medical: med,
       health: check ? { healthOk: check.healthOk, note: check.note || '' } : null,
     };
@@ -657,7 +684,10 @@ app.get('/api/teacher/students', authRequired, teacherOnly, (req, res) => {
   if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
   const className = String(req.query.className || '').trim();
   if (!canClass(teacher, className)) return res.status(403).json({ error: 'Bu sinf sizga biriktirilmagan' });
-  const list = db.store.students.filter((s) => (s.className || '(sinsiz)') === className);
+  const list = db.store.students.filter((s) => (s.className || '(sinsiz)') === className).map((s) => {
+    const { photo, ...rest } = s;
+    return { ...rest, photoUrl: photo ? '/api/students/' + s.id + '/photo' : null };
+  });
   res.json(list);
 });
 
@@ -899,7 +929,10 @@ app.get('/api/teacher/stats', authRequired, teacherOnly, (req, res) => {
 
 // ---------- O'quvchilar ----------
 app.get('/api/students', authRequired, adminOnly, (req, res) => {
-  res.json(db.store.students);
+  res.json(db.store.students.map((s) => {
+    const { photo, ...rest } = s;
+    return { ...rest, photoUrl: photo ? '/api/students/' + s.id + '/photo' : null };
+  }));
 });
 
 app.post('/api/students', authRequired, adminOnly, (req, res) => {
@@ -1464,6 +1497,8 @@ app.get('/api/parent', authRequired, (req, res) => {
   if (req.user.role !== 'parent') return res.status(403).json({ error: 'Ruxsat yo`q' });
   const student = db.store.students.find((s) => s.id === req.user.studentId);
   if (!student) return res.status(404).json({ error: 'Farzand topilmadi' });
+  const { photo: _sp, ...studentView } = student;
+  studentView.photoUrl = _sp ? '/api/students/' + student.id + '/photo' : null;
 
   const grades = db.store.grades.filter((g) => g.studentId === student.id);
   const attendance = db.store.attendance.filter((a) => a.studentId === student.id);
@@ -1500,7 +1535,7 @@ app.get('/api/parent', authRequired, (req, res) => {
       id: t.id,
       fullName: t.fullName,
       position: t.position || '',
-      photo: t.photo || null,
+      photoUrl: t.photo ? '/api/teachers/' + t.id + '/photo' : null,
       subjects: t.subjects || [],
     }));
 

@@ -56,7 +56,7 @@
     const s = data.student;
     return `
       <div class="parent-hero">
-        ${s.photo ? `<img class="avatar" src="${escapeHtml(s.photo)}" alt="foto">` : `<span class="avatar">${escapeHtml((s.lastName + s.firstName).slice(0, 2))}</span>`}
+        ${(s.photoUrl || s.photo) ? `<img class="avatar" src="${escapeHtml(s.photoUrl || s.photo)}" alt="foto" loading="lazy">` : `<span class="avatar">${escapeHtml((s.lastName + s.firstName).slice(0, 2))}</span>`}
         <div>
           <h2>${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</h2>
           <div class="meta">${escapeHtml(s.patronymic)} • ${escapeHtml(s.className)} sinfi</div>
@@ -189,8 +189,8 @@
   function renderTeachers() {
     const list = data.teachers || [];
     const cards = list.map((t) => {
-      const avatar = t.photo
-        ? '<img class="avatar" style="width:56px;height:56px;border-radius:50%;object-fit:cover" src="' + escapeHtml(t.photo) + '" alt="foto">'
+      const avatar = (t.photoUrl || t.photo)
+        ? '<img class="avatar" style="width:56px;height:56px;border-radius:50%;object-fit:cover" src="' + escapeHtml(t.photoUrl || t.photo) + '" alt="foto" loading="lazy">'
         : '<span class="avatar" style="width:56px;height:56px;border-radius:50%">' + escapeHtml((t.fullName.split(' ').map((x) => x[0]).join('') || 'T').slice(0, 2)) + '</span>';
       return `
         <div class="panel">

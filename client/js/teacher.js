@@ -8,7 +8,8 @@
 
   function tAvatar(p) {
     const initials = ((p.fullName || '').split(' ').map((x) => x[0]).join('') || 'T').slice(0, 2).toUpperCase();
-    if (p.photo) return `<img class="avatar" style="border-radius:50%;object-fit:cover" src="${escapeHtml(p.photo)}" alt="foto">`;
+    const src = p.photoUrl || p.photo;
+    if (src) return `<img class="avatar" style="border-radius:50%;object-fit:cover" src="${escapeHtml(src)}" alt="foto" loading="lazy">`;
     return `<span class="avatar" style="border-radius:50%">${escapeHtml(initials)}</span>`;
   }
 
@@ -149,8 +150,8 @@
 
     content.innerHTML = `
       <div class="panel profile-card">
-        <div class="profile-avatar">${(me.teacher.photo
-          ? '<img class="avatar" style="width:64px;height:64px;border-radius:50%;object-fit:cover" src="' + escapeHtml(me.teacher.photo) + '" alt="foto">'
+        <div class="profile-avatar">${((me.teacher.photoUrl || me.teacher.photo)
+          ? '<img class="avatar" style="width:64px;height:64px;border-radius:50%;object-fit:cover" src="' + escapeHtml(me.teacher.photoUrl || me.teacher.photo) + '" alt="foto">'
           : '<span class="avatar" style="width:64px;height:64px;font-size:22px;border-radius:50%">' + escapeHtml(((me.teacher.fullName || 'T').split(' ').map((x) => x[0]).join('') || 'T').slice(0, 2).toUpperCase()) + '</span>')}</div>
         <div class="profile-info">
           <h3>${escapeHtml(me.teacher.fullName)}</h3>
@@ -181,8 +182,8 @@
       <div class="form-group"><label>F.I.Sh.</label><input id="tpName" value="${escapeHtml(me.teacher.fullName)}" disabled></div>
       <div class="form-group"><label>Lavozim</label><input id="tpPosition" value="${escapeHtml(me.teacher.position || '')}" placeholder="masalan: Matematika o'qituvchisi"></div>
       <div class="form-group"><label>Rasm</label><div style="display:flex;align-items:center;gap:12px">
-        <div id="tpPhotoPrev">${me.teacher.photo
-          ? '<img class="avatar" style="width:64px;height:64px;border-radius:50%;object-fit:cover" src="' + escapeHtml(me.teacher.photo) + '" alt="foto">'
+        <div id="tpPhotoPrev">${(me.teacher.photoUrl || me.teacher.photo)
+          ? '<img class="avatar" style="width:64px;height:64px;border-radius:50%;object-fit:cover" src="' + escapeHtml(me.teacher.photoUrl || me.teacher.photo) + '" alt="foto">'
           : '<span class="avatar" style="width:64px;height:64px;font-size:22px;border-radius:50%">' + escapeHtml(((me.teacher.fullName || 'T').split(' ').map((x) => x[0]).join('') || 'T').slice(0, 2).toUpperCase()) + '</span>'}</div>
         <input type="file" id="tpPhotoInp" accept="image/*" style="font-size:13px">
       </div></div>
@@ -208,8 +209,9 @@
         await API.put('/api/teacher/me', { position });
         const file = inp.files[0];
         if (file) {
+          const compressed = await compressImage(file, 400, 533, 0.7);
           const fd = new FormData();
-          fd.append('photo', file);
+          fd.append('photo', compressed);
           await API.post('/api/teacher/photo', fd, true);
         }
         me = await API.get('/api/teacher/me');
