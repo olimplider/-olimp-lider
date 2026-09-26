@@ -1097,11 +1097,17 @@ app.put('/api/students/:id', authRequired, adminOnly, (req, res) => {
 
 app.delete('/api/students/:id', authRequired, adminOnly, (req, res) => {
   const id = Number(req.params.id);
+  if (!db.store.students.some((s) => s.id === id)) return res.status(404).json({ error: 'O`quvchi topilmadi' });
   db.store.students = db.store.students.filter((s) => s.id !== id);
   db.store.users = db.store.users.filter((u) => !(u.role === 'parent' && u.studentId === id));
   db.store.payments = db.store.payments.filter((p) => p.studentId !== id);
   db.store.attendance = db.store.attendance.filter((a) => a.studentId !== id);
   db.store.grades = db.store.grades.filter((g) => g.studentId !== id);
+  db.store.medical = db.store.medical.filter((m) => m.studentId !== id);
+  db.store.healthchecks = db.store.healthchecks.filter((h) => h.studentId !== id);
+  db.store.tests = db.store.tests.map((t) =>
+    Array.isArray(t.results) ? { ...t, results: t.results.filter((r) => r.studentId !== id) } : t
+  );
   db.saveAll();
   res.json({ ok: true });
 });
@@ -2089,6 +2095,38 @@ app.post('/api/chat/send', authRequired, (req, res) => {
   db.store.messages.push(msg);
   db.saveCollection('messages');
   res.status(201).json(msg);
+});
+
+// Tanlangan o'quvchilarning ota-onalariga bir xil xabar (bitta saqlash bilan)
+app.post('/api/chat/bulk', authRequired, async (req, res) => {
+  const me = db.store.users.find((u) => u.id === req.user.id);
+  if (!me) return res.status(404).json({ error: 'Foydalanuvchi topilmadi' });
+  const b = req.body || {};
+  const sIds = Array.isArray(b.studentIds) ? b.studentIds.map(Number).filter((n) => Number.isInteger(n) && n > 0) : [];
+  const text = String(b.text || '').trim().slice(0, 2000);
+  if (!text) return res.status(400).json({ error: 'Xabar kiritilmadi' });
+  if (!sIds.length) return res.status(400).json({ error: 'O\'quvchi tanlanmagan' });
+  if (sIds.length > 400) return res.status(400).json({ error: 'Bir vaqtda 400 tagacha xabar yuboriladi' });
+
+  // O'quvchi ID -> ota-ona foydalanuvchi ID
+  const parentOf = {};
+  for (const u of db.store.users) {
+    if (u.role === 'parent' && u.studentId && !parentOf[u.studentId]) parentOf[u.studentId] = u.id;
+  }
+  const allowed = new Set(chatContactsForUser(me).map((c) => c.id));
+  const wanted = [...new Set(sIds)];
+  const targets = wanted.map((sid) => parentOf[sid]).filter((uid) => uid && allowed.has(uid));
+  const noParent = wanted.length - targets.length;
+
+  if (!targets.length) return res.status(403).json({ error: 'Hech bir ota-onaga yozish mumkin emas' });
+
+  const now = new Date().toISOString();
+  let id = db.nextId('messages');
+  for (const to of targets) {
+    db.store.messages.push({ id: id++, from: me.id, to, text, createdAt: now, read: false });
+  }
+  db.saveCollection('messages');
+  res.status(201).json({ sent: targets.length, skipped: noParent });
 });
 
 app.post('/api/chat/read', authRequired, (req, res) => {

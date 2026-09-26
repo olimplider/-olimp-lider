@@ -33,6 +33,177 @@
     return students;
   }
 
+  // ---------- UMUMIY QIDIRUV / FILTR / SARALASH ----------
+  // Har bir bo'lim o'z holatini fState ichida saqlaydi.
+  const fState = {
+    students: { q: '', cls: '', pay: 'all', fee: 'all', sort: 'name' },
+    payments: { q: '', cls: '', status: 'all', sort: 'name' },
+    attendance: { q: '', status: 'all', sort: 'name' },
+  };
+
+  // Ism, familya, otasining ismi, sinf, ota-ona ismi yoki telefon bo'yicha
+  function matchStudent(s, q) {
+    if (!q) return true;
+    const n = String(q).trim().toLowerCase();
+    if (!n) return true;
+    return [s.lastName, s.firstName, s.patronymic, s.className, s.parentName, s.parentPhone, s.address]
+      .some((f) => String(f || '').toLowerCase().includes(n));
+  }
+
+  function className(s) {
+    return s.className || '(sinsiz)';
+  }
+
+  // Umumiy filtr: qidiruv + sinf, keyin saralash
+  function filterStudents(list, st) {
+    let out = list.filter((s) => matchStudent(s, st.q));
+    if (st.cls) out = out.filter((s) => className(s) === st.cls);
+    if (st.status && st.status !== 'all') out = out.filter((s) => st.statusFn(s));
+    if (st.sort === 'name') out = out.slice().sort((a, b) => String(a.lastName || '').localeCompare(String(b.lastName || '')) || String(a.firstName || '').localeCompare(String(b.firstName || '')));
+    else if (st.sort === 'nameDesc') out = out.slice().sort((a, b) => String(b.lastName || '').localeCompare(String(a.lastName || '')) || String(a.firstName || '').localeCompare(String(b.firstName || '')));
+    else if (st.sort === 'class') out = out.slice().sort((a, b) => className(a).localeCompare(className(b), 'uz') || String(a.lastName || '').localeCompare(String(b.lastName || '')));
+    else if (st.sort === 'fee') out = out.slice().sort((a, b) => (Number(b.monthlyFee) || 0) - (Number(a.monthlyFee) || 0));
+    return out;
+  }
+
+  // Filtr satri HTML'i
+  function filterBar(id, st, opts = {}) {
+    const o = Object.assign({ search: true, cls: true, pay: false, fee: false, status: null, sort: 'name,nameDesc|Ism,familya|Sinf|Sinf|To\'lov', extra: '' }, opts);
+    let h = '<div class="filter-bar">';
+    if (o.search) {
+      h += `<div class="search-box">
+        <span class="s-ico">🔍</span>
+        <input type="search" id="${id}Q" placeholder="Ism, familya, telefon..." value="${escapeHtml(st.q)}" autocomplete="off">
+        <button class="s-clear" type="button" data-clear="${id}Q" title="Tozalash"${st.q ? '' : ' hidden'}>×</button>
+      </div>`;
+    }
+    if (o.cls) {
+      const opts2 = (opts.classOptions || []).map((c) => `<option value="${escapeHtml(c)}"${c === st.cls ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('');
+      h += `<select id="${id}Cls" class="f-select"><option value="">Barcha sinflar</option>${opts2}</select>`;
+    }
+    if (o.pay) {
+      h += `<select id="${id}Pay" class="f-select">
+        <option value="all"${st.pay === 'all' ? ' selected' : ''}>To'lov: barchasi</option>
+        <option value="paid"${st.pay === 'paid' ? ' selected' : ''}>Faqat to'langan</option>
+        <option value="unpaid"${st.pay === 'unpaid' ? ' selected' : ''}>Faqat to'lanmagan</option>
+      </select>`;
+    }
+    if (o.fee) {
+      h += `<select id="${id}Fee" class="f-select">
+        <option value="all"${st.fee === 'all' ? ' selected' : ''}>To'lov summasi: barchasi</option>
+        <option value="has"${st.fee === 'has' ? ' selected' : ''}>Summasi bor</option>
+        <option value="none"${st.fee === 'none' ? ' selected' : ''}>Summasi yo'q</option>
+      </select>`;
+    }
+    if (o.status) {
+      h += `<select id="${id}St" class="f-select">${o.status.map((s) =>
+        `<option value="${s[0]}"${st.status === s[0] ? ' selected' : ''}>${s[1]}</option>`).join('')}</select>`;
+    }
+    h += `<select id="${id}Sort" class="f-select"><option value="name"${st.sort === 'name' ? ' selected' : ''}>A → Z (familiya)</option><option value="nameDesc"${st.sort === 'nameDesc' ? ' selected' : ''}>Z → A (familiya)</option><option value="class"${st.sort === 'class' ? ' selected' : ''}>Sinf bo'yicha</option><option value="fee"${st.sort === 'fee' ? ' selected' : ''}>To'lov summasi</option></select>`;
+    h += o.extra;
+    h += `<button class="btn btn-ghost btn-sm" onclick="window.appResetFilter('${id}')">↺ Tozalash</button>`;
+    h += '<span class="f-count" id="' + id + 'Count"></span>';
+    h += '</div>';
+    return h;
+  }
+
+  // Filtr maydonlarini hodisalarga ulash
+  function bindFilterBar(id, st, onChange) {
+    const q = document.getElementById(id + 'Q');
+    if (q) {
+      let t = null;
+      q.addEventListener('input', (e) => {
+        st.q = e.target.value;
+        const c = document.querySelector(`[data-clear="${id}Q"]`);
+        if (c) c.hidden = !st.q;
+        clearTimeout(t);
+        t = setTimeout(onChange, 180);
+      });
+    }
+    document.querySelectorAll(`[data-clear="${id}Q"]`).forEach((b) =>
+      b.addEventListener('click', () => { st.q = ''; onChange(); }));
+    [['Cls', 'cls'], ['Pay', 'pay'], ['Fee', 'fee'], ['St', 'status'], ['Sort', 'sort']].forEach(([k, key]) => {
+      const el = document.getElementById(id + k);
+      if (el) el.addEventListener('change', (e) => { st[key] = e.target.value; onChange(); });
+    });
+  }
+
+  function setCount(id, shown, total) {
+    const el = document.getElementById(id + 'Count');
+    if (el) el.textContent = shown === total ? `${total} ta` : `${shown} / ${total} ta`;
+  }
+
+  // ---------- BULK AMALLAR ----------
+  const BULK_ACTIONS = {
+    students: [
+      { label: '✉️ Xabar yuborish', cls: 'btn-primary', fn: 'appBulkMessage' },
+      { label: '📚 Sinfga o\'tkazish', cls: 'btn-outline', fn: 'appBulkMove' },
+      { label: '🗑️ O\'chirish', cls: 'btn-danger', fn: 'appBulkDelete' },
+    ],
+    payments: [
+      { label: '✓ To\'langan qilish', cls: 'btn-success', fn: 'appBulkPay', arg: 'true' },
+      { label: '✗ To\'lanmagan qilish', cls: 'btn-outline', fn: 'appBulkPay', arg: 'false' },
+    ],
+    attendance: [
+      { label: '✓ Keldi', cls: 'btn-success', fn: 'appBulkAtt', arg: 'present' },
+      { label: '⏰ Kechikdi', cls: 'btn-outline', fn: 'appBulkAtt', arg: 'late' },
+      { label: '✗ Kelmadi', cls: 'btn-danger', fn: 'appBulkAtt', arg: 'absent' },
+    ],
+  };
+
+  function bulkBarHtml(scope) {
+    const acts = BULK_ACTIONS[scope] || [];
+    if (!selected.size || !acts.length) return '';
+    return `<div class="bulk-bar">
+      <span class="bulk-n">☑️ Tanlangan: <b>${selected.size}</b></span>
+      ${acts.map((a) => `<button class="btn btn-sm ${a.cls}" onclick="window.${a.fn}(${a.arg === undefined ? '' : JSON.stringify(a.arg)})">${a.label}</button>`).join('')}
+      <button class="btn btn-ghost btn-sm" onclick="window.appSelClear()">Bekor qilish</button>
+    </div>`;
+  }
+
+  function classOptions() {
+    return [...new Set(students.map((s) => s.className).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'uz'));
+  }
+
+  // ---------- KO'P TANLASH (BULK) ----------
+  const selected = new Set();
+  let bulkScope = 'students';
+
+  function clearSel() {
+    selected.clear();
+  }
+
+  function selIds() {
+    return [...selected];
+  }
+
+  // Jadval boshqaruv ustuni
+  function selCell(id) {
+    return `<td class="rowsel"><input type="checkbox" class="sel-chk" data-sid="${id}"${selected.has(id) ? ' checked' : ''}></td>`;
+  }
+
+  function selHead(allIds) {
+    const all = allIds.length > 0 && allIds.every((i) => selected.has(i));
+    return `<th class="rowsel"><input type="checkbox" class="sel-all"${all ? ' checked' : ''} title="Barchasini tanlash"></th>`;
+  }
+
+  function bindSel(onChange) {
+    document.querySelectorAll('.sel-all').forEach((c) =>
+      c.addEventListener('change', () => {
+        const ids = [...document.querySelectorAll('.sel-chk')].map((x) => Number(x.dataset.sid));
+        if (c.checked) ids.forEach((i) => selected.add(i));
+        else selected.clear();
+        onChange();
+      }));
+    document.querySelectorAll('.sel-chk').forEach((c) =>
+      c.addEventListener('change', () => {
+        const id = Number(c.dataset.sid);
+        if (c.checked) selected.add(id);
+        else selected.delete(id);
+        onChange();
+      }));
+  }
+
   function toast(msg, type = 'ok') {
     const el = document.createElement('div');
     el.style.cssText = 'position:fixed;bottom:24px;right:24px;background:' + (type === 'error' ? '#dc2626' : '#16a34a') + ';color:#fff;padding:12px 18px;border-radius:10px;font-size:14px;font-weight:600;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.2);';
@@ -91,6 +262,34 @@
   }
 
   // ---------- DASHBORD ----------
+  const QUICK = [
+    { ico: '📋', label: "Bugungi davomat", sub: 'Kelishni belgilash', sec: 'attendance' },
+    { ico: '💰', label: "Oylik to'lovlar", sub: 'To\'lov holati', sec: 'payments' },
+    { ico: '➕', label: "O'quvchi qo'shish", sub: 'Yangi o\'quvchi', sec: '_add' },
+    { ico: '💬', label: 'Xabar yuborish', sub: "Ota-onalarga", sec: '_chat' },
+    { ico: '📚', label: 'Dars jadvali', sub: 'Haftalik jadval', sec: 'schedule' },
+    { ico: '📄', label: 'Word hisobot', sub: 'Sinflar ro\'yxati', sec: 'classes' },
+  ];
+
+  function quickGridHtml() {
+    return '<div class="quick-grid">' + QUICK.map((q) =>
+      `<button class="quick-btn" onclick="window.appQuick('${q.sec}')">
+        <span class="q-ico">${q.ico}</span>
+        <span class="q-txt"><span class="q-label">${q.label}</span><span class="q-sub">${q.sub}</span></span>
+      </button>`).join('') + '</div>';
+  }
+
+  window.appQuick = async (sec) => {
+    if (sec === '_add') return studentModal();
+    if (sec === '_chat') return window.CHAT.open();
+    if (sec === 'attendance') { attendDate = todayStr(); attendClass = ''; }
+    if (sec === 'payments') { const d = new Date(); payMonth = d.getMonth() + 1; payYear = d.getFullYear(); }
+    document.querySelectorAll('.nav-item[data-section]').forEach((b) => b.classList.remove('active'));
+    const nav = document.querySelector('.nav-item[data-section="' + sec + '"]');
+    if (nav) nav.classList.add('active');
+    await navigateTo(sec);
+  };
+
   async function renderDashboard() {
     const stats = await API.get('/api/stats');
     const total = stats.totalStudents || 0;
@@ -130,35 +329,47 @@
       </div>
     `;
 
-    content.innerHTML = cards + panels;
+    content.innerHTML = quickGridHtml() + cards + panels;
   }
 
   // ---------- O'QUVCHILAR ----------
   let classFilter = '';
+  let stuPayMap = {};   // studentId -> to'langan (joriy oy)
+
+  async function loadPayMap(month, year) {
+    const list = await API.get('/api/payments?month=' + month + '&year=' + year);
+    const m = {};
+    list.forEach((p) => { m[p.studentId] = p.paid; });
+    return m;
+  }
 
   async function renderStudents() {
     students = await loadStudents(true);
-    const classes = [...new Set(students.map((s) => s.className).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'uz'));
-    if (!classes.includes(classFilter)) classFilter = '';
+    const classes = classOptions();
+    if (classFilter && !classes.includes(classFilter)) classFilter = '';
+    const now = new Date();
+    stuPayMap = await loadPayMap(now.getMonth() + 1, now.getFullYear());
 
     topbarActions.innerHTML = `<div class="toolbar">
-      <select id="classFilter" style="min-width:150px">
-        <option value="">Barcha sinflar (${students.length})</option>
-        ${classes.map((c) => `<option value="${escapeHtml(c)}" ${c === classFilter ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
-      </select>
       <button class="btn btn-outline" onclick="window.appExportWord()">${ICONS.doc.replace('width="18"', 'width="16"')} Word (docx)</button>
       <button class="btn btn-primary" onclick="window.appAddStudent()">${ICONS.students.replace('width="18"', 'width="16"')} O'quvchi qo'shish</button>
     </div>`;
 
-    document.getElementById('classFilter').addEventListener('change', (e) => {
-      classFilter = e.target.value;
-      renderStudentTable();
-    });
-
-    renderStudentTable();
+    renderStudentTable(classes);
   }
 
-  function renderStudentTable() {
+  function studentList() {
+    const st = fState.students;
+    st.cls = classFilter;
+    let list = filterStudents(students, st);
+    if (st.pay === 'paid') list = list.filter((s) => stuPayMap[s.id]);
+    if (st.pay === 'unpaid') list = list.filter((s) => !stuPayMap[s.id]);
+    if (st.fee === 'has') list = list.filter((s) => Number(s.monthlyFee) > 0);
+    if (st.fee === 'none') list = list.filter((s) => !(Number(s.monthlyFee) > 0));
+    return list;
+  }
+
+  function renderStudentTable(classes) {
     if (!students.length) {
       content.innerHTML = `<div class="panel"><div class="empty-state">
         <h4>Hali o'quvchilar yo'q</h4>
@@ -167,23 +378,25 @@
       return;
     }
 
-    const list = classFilter ? students.filter((s) => s.className === classFilter) : students;
+    const list = studentList();
+    const clsList = classes || classOptions();
 
     if (!list.length) {
-      content.innerHTML = `<div class="panel"><div class="empty-state"><h4>Bu sinfda o'quvchilar yo'q</h4></div></div>`;
+      content.innerHTML = `<div class="panel">${filterBar('St', fState.students, { pay: true, fee: true, classOptions: clsList })}
+        <div class="empty-state"><h4>Hech qanday o'quvchi topilmadi</h4><p class="muted">Qidiruv yoki filtrni o'zgartirib ko'ring.</p></div></div>`;
+      bindFilterBar('St', fState.students, () => { classFilter = fState.students.cls; renderStudentTable(clsList); });
       return;
     }
 
-    const sorted = list.slice().sort((a, b) =>
-      String(a.lastName || '').localeCompare(String(b.lastName || '')) ||
-      String(a.firstName || '').localeCompare(String(b.firstName || '')));
-
-    const rows = sorted.map((s, i) => {
-      return `<tr>
+    const rows = list.map((s, i) => {
+      const paid = stuPayMap[s.id];
+      return `<tr class="${selected.has(s.id) ? 'sel-row' : ''}">
+        ${selCell(s.id)}
         <td class="rownum">${i + 1}</td>
         <td><div class="student-cell">${avatarHtml(s)}<div><div class="name">${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</div><div class="sub">${escapeHtml(s.patronymic)}</div></div></div></td>
         <td><span class="badge badge-purple">${escapeHtml(s.className) || '—'}</span></td>
         <td>${s.monthlyFee ? s.monthlyFee.toLocaleString('ru-RU') + ' so\'m' : '—'}</td>
+        <td><span class="pay-status ${paid ? 'ok' : 'no'}">${paid ? '✓ To\'langan' : '✗ To\'lanmagan'}</span></td>
         <td>${escapeHtml(s.parentName) || '—'}<div class="sub">${escapeHtml(s.parentPhone) || ''}</div></td>
         <td class="actions">
           <button class="btn btn-outline btn-sm" onclick="window.appEditStudent(${s.id})">Tahrirlash</button>
@@ -193,9 +406,24 @@
       </tr>`;
     }).join('');
 
-    content.innerHTML = `<div class="panel"><div class="panel-header"><h3>O'quvchilar</h3><span class="badge badge-blue">${sorted.length} ta</span></div><div class="table-wrap"><table>
-      <thead><tr><th style="width:52px">T/r</th><th>O'quvchi</th><th>Sinf</th><th>Oylik to'lov</th><th>Ota-ona</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table></div></div>`;
+    content.innerHTML = `<div class="panel">
+      <div class="panel-header"><h3>O'quvchilar</h3><span class="badge badge-blue">${list.length} ta</span></div>
+      ${filterBar('St', fState.students, { pay: true, fee: true, classOptions: clsList })}
+      ${bulkBarHtml('students')}
+      <div class="table-wrap"><table>
+        <thead><tr>${selHead(list.map((s) => s.id))}<th style="width:52px">T/r</th><th>O'quvchi</th><th>Sinf</th><th>Oylik to'lov</th><th>To'lov</th><th>Ota-ona</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+    </div>`;
+
+    bindFilterBar('St', fState.students, () => { classFilter = fState.students.cls; renderStudentTable(clsList); });
+    bindSel(() => renderStudentTable(clsList));
+    setCount('St', list.length, students.length);
+  }
+
+  // Klassani o'zgartirish (filter holati bilan sinxron)
+  function syncClassFilter(v) {
+    classFilter = v || '';
+    fState.students.cls = classFilter;
   }
 
   function genPassword(len = 8) {
@@ -441,6 +669,8 @@
 
   async function renderPayments() {
     students = await loadStudents(true);
+    const classes = classOptions();
+    if (fState.payments.cls && !classes.includes(fState.payments.cls)) fState.payments.cls = '';
     topbarActions.innerHTML = `
       <div class="toolbar">
         <select id="payMonthSel">${renderMonthsSelect(payMonth)}</select>
@@ -453,22 +683,36 @@
     await renderPayTable();
   }
 
+  function payList() {
+    const st = fState.payments;
+    let list = filterStudents(students, st);
+    if (st.status === 'paid') list = list.filter((s) => payMapLive[s.id]);
+    if (st.status === 'unpaid') list = list.filter((s) => !payMapLive[s.id]);
+    return list;
+  }
+
+  let payMapLive = {};
+
   async function renderPayTable() {
     const payments = await API.get('/api/payments?month=' + payMonth + '&year=' + payYear);
     const map = {};
-    payments.forEach((p) => { map[p.studentId] = p; });
+    payMapLive = {};
+    payments.forEach((p) => { map[p.studentId] = p; payMapLive[p.studentId] = p.paid; });
 
     if (!students.length) {
       content.innerHTML = '<div class="panel"><div class="empty-state"><h4>O\'quvchilar yo\'q</h4></div></div>';
       return;
     }
 
-    let paidCount = 0;
-    const rows = students.map((s, i) => {
-      const p = map[s.id];
-      const paid = p ? p.paid : false;
-      if (paid) paidCount++;
-      return `<tr>
+    const classes = classOptions();
+    const list = payList();
+    const labelName = monthNames()[payMonth - 1];
+
+    let paidCount = list.filter((s) => payMapLive[s.id]).length;
+    const rows = list.map((s, i) => {
+      const paid = !!payMapLive[s.id];
+      return `<tr class="${selected.has(s.id) ? 'sel-row' : ''}">
+        ${selCell(s.id)}
         <td class="rownum">${i + 1}</td>
         <td><div class="student-cell">${avatarHtml(s)}<div><div class="name">${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</div><div class="sub">${escapeHtml(s.className)}</div></div></div></td>
         <td>${s.monthlyFee ? s.monthlyFee.toLocaleString('ru-RU') + ' so\'m' : '—'}</td>
@@ -477,24 +721,29 @@
       </tr>`;
     }).join('');
 
-    const pct = students.length ? Math.round((paidCount / students.length) * 100) : 0;
+    const pct = list.length ? Math.round((paidCount / list.length) * 100) : 0;
 
     content.innerHTML = `<div class="panel">
-      <div class="panel-header"><h3>${renderMonthsSelect(payMonth).replace(/<option[^>]*>([^<]*)<\/option>/g, '').replace('selected', '')}</h3><span class="badge badge-blue">${paidCount} / ${students.length} to'lagan (${pct}%)</span></div>
+      <div class="panel-header"><h3>${escapeHtml(labelName)}</h3><span class="badge badge-blue">${paidCount} / ${list.length} to'lagan (${pct}%)</span></div>
       <div class="panel-body" style="padding-top:10px">
-        <div class="progress-wrap" style="margin-bottom:16px"><div class="progress"><div style="width:${pct}%;background:linear-gradient(90deg,#d4af37,#b8922e)"></div></div></div>
+        <div class="progress-wrap" style="margin-bottom:0"><div class="progress"><div style="width:${pct}%;background:linear-gradient(90deg,#d4af37,#b8922e)"></div></div></div>
       </div>
+      ${filterBar('Pay', fState.payments, { classOptions: classes, status: [['all', 'Holat: barchasi'], ['paid', 'Faqat to\'langan'], ['unpaid', 'Faqat to\'lanmagan']] })}
+      ${bulkBarHtml('payments')}
       <div class="table-wrap"><table>
-        <thead><tr><th style="width:52px">T/r</th><th>O'quvchi</th><th>Oylik to'lov</th><th style="text-align:center">To'lov</th><th>Holat</th></tr></thead>
+        <thead><tr>${selHead(list.map((s) => s.id))}<th style="width:52px">T/r</th><th>O'quvchi</th><th>Oylik to'lov</th><th style="text-align:center">To'lov</th><th>Holat</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
     </div>`;
+
+    bindFilterBar('Pay', fState.payments, () => renderPayTable());
+    bindSel(() => renderPayTable());
+    setCount('Pay', list.length, students.length);
 
     document.querySelectorAll('.switch input').forEach((chk) => {
       chk.addEventListener('change', async (e) => {
         const pid = Number(chk.dataset.pid);
         const paid = chk.checked;
-        const labelName = monthNames()[payMonth - 1];
         await API.post('/api/payments/toggle', { studentId: pid, month: payMonth, year: payYear, paid });
         const st = document.getElementById('ps-' + pid);
         if (st) {
@@ -535,21 +784,38 @@
     await renderAttTable();
   }
 
+  function attList() {
+    const st = fState.attendance;
+    st.cls = attendClass;
+    st.statusFn = (s) => {
+      const v = attMapLive[s.id] || null;
+      if (st.status === 'all') return true;
+      if (st.status === 'none') return !v;
+      return v === st.status;
+    };
+    return filterStudents(students, st);
+  }
+
+  let attMapLive = {};
+
   async function renderAttTable() {
     const att = await API.get('/api/attendance?date=' + attendDate);
     const map = {};
-    att.forEach((a) => { map[a.studentId] = a.status; });
+    attMapLive = {};
+    att.forEach((a) => { map[a.studentId] = a.status; attMapLive[a.studentId] = a.status; });
 
     if (!students.length) {
       content.innerHTML = '<div class="panel"><div class="empty-state"><h4>O\'quvchilar yo\'q</h4></div></div>';
       return;
     }
 
-    const list = attendClass ? students.filter((s) => (s.className || '(sinsiz)') === attendClass) : students;
+    const classes = [...new Set(students.map((s) => s.className || '(sinsiz)'))].sort();
+    const list = attList();
 
     const rows = list.map((s, i) => {
       const st = map[s.id] || null;
-      return `<tr>
+      return `<tr class="${selected.has(s.id) ? 'sel-row' : ''}">
+        ${selCell(s.id)}
         <td class="rownum">${i + 1}</td>
         <td><div class="student-cell">${avatarHtml(s)}<div><div class="name">${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</div><div class="sub">${escapeHtml(s.className)}</div></div></div></td>
         <td><button class="btn btn-sm ${st === 'present' ? 'btn-success' : 'btn-ghost'}" onclick="window.appSetAtt(${s.id},'present')">✓ Keldi</button></td>
@@ -587,12 +853,18 @@
             <button class="btn btn-outline btn-sm" onclick="window.appBulkStudents()">Qo'llash</button>
           </div>
         </div>
+        ${filterBar('Att', fState.attendance, { classOptions: classes, status: [['all', 'Davomat: barchasi'], ['present', 'Faqat keldi'], ['late', 'Faqat kechikdi'], ['absent', 'Faqat kelmadi'], ['none', 'Faqat belgilanmagan']] })}
+        ${bulkBarHtml('attendance')}
         <div class="table-wrap"><table>
-          <thead><tr><th style="width:52px">T/r</th><th>O'quvchi</th><th>Keldi</th><th>Kechikdi</th><th>Kelmadi</th><th></th></tr></thead>
+          <thead><tr>${selHead(list.map((s) => s.id))}<th style="width:52px">T/r</th><th>O'quvchi</th><th>Keldi</th><th>Kechikdi</th><th>Kelmadi</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
       </div>
       <div id="teacherAttPanel"></div>`;
+
+    bindFilterBar('Att', fState.attendance, () => { attendClass = fState.attendance.cls; const d = document.getElementById('attClass'); if (d) d.value = attendClass; renderAttTable(); });
+    bindSel(() => renderAttTable());
+    setCount('Att', list.length, students.length);
 
     await renderTeacherAtt();
   }
@@ -675,32 +947,66 @@
 
   // ---------- BAHOLAR ----------
   let gradeStudentId = null;
+  let gradeQ = '';
+  let gradeClass = '';
+
+  function gradeFiltered() {
+    return students.filter((s) => matchStudent(s, gradeQ) && (!gradeClass || s.className === gradeClass));
+  }
+
+  function gradeOptionsHtml() {
+    const list = gradeFiltered();
+    const sel = students.find((s) => s.id === gradeStudentId);
+    return `<option value="">— O'quvchini tanlang —</option>` + list.map((s) =>
+      `<option value="${s.id}" ${s.id === sel?.id ? 'selected' : ''}>${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)} (${escapeHtml(s.className)})</option>`).join('');
+  }
 
   async function renderGrades() {
     students = await loadStudents(true);
-    let selected = students.find((s) => s.id === gradeStudentId);
-    if (!selected && students.length) selected = students[0];
-    if (selected) gradeStudentId = selected.id;
+    const classes = classOptions();
+    if (gradeClass && !classes.includes(gradeClass)) gradeClass = '';
+    let cur = students.find((s) => s.id === gradeStudentId);
+    if (!cur && students.length) cur = students[0];
+    if (cur) gradeStudentId = cur.id;
+    const selectedStu = cur;
+
+    const clsOpts = `<option value="">Barcha sinflar</option>` + classes.map((c) =>
+      `<option value="${escapeHtml(c)}"${c === gradeClass ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('');
 
     topbarActions.innerHTML = `<div class="toolbar">
-      <select id="gradeStudentSel" style="min-width:220px">
-        <option value="">— O'quvchini tanlang —</option>
-        ${students.map((s) => `<option value="${s.id}" ${s.id === selected?.id ? 'selected' : ''}>${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)} (${escapeHtml(s.className)})</option>`).join('')}
-      </select>
-      ${selected ? '<button class="btn btn-primary btn-sm" onclick="window.appAddGrade()">+ Baho qo\'shish</button>' : ''}
+      <div class="search-box">
+        <span class="s-ico">🔍</span>
+        <input type="search" id="gradeSearch" placeholder="O'quvchini qidiring..." value="${escapeHtml(gradeQ)}" autocomplete="off" style="min-width:190px">
+      </div>
+      <select id="gradeCls" style="min-width:130px">${clsOpts}</select>
+      <select id="gradeStudentSel" style="min-width:220px">${gradeOptionsHtml()}</select>
+      ${selectedStu ? '<button class="btn btn-primary btn-sm" onclick="window.appAddGrade()">+ Baho qo\'shish</button>' : ''}
     </div>`;
+
+    const gSearch = document.getElementById('gradeSearch');
+    let gt = null;
+    gSearch.addEventListener('input', (e) => {
+      gradeQ = e.target.value;
+      clearTimeout(gt);
+      gt = setTimeout(() => { document.getElementById('gradeStudentSel').innerHTML = gradeOptionsHtml(); }, 150);
+    });
+
+    document.getElementById('gradeCls').addEventListener('change', (e) => {
+      gradeClass = e.target.value;
+      document.getElementById('gradeStudentSel').innerHTML = gradeOptionsHtml();
+    });
 
     document.getElementById('gradeStudentSel').addEventListener('change', (e) => {
       gradeStudentId = Number(e.target.value);
       renderGrades();
     });
 
-    if (!selected) {
+    if (!selectedStu) {
       content.innerHTML = '<div class="panel"><div class="empty-state"><h4>O\'quvchi tanlang</h4></div></div>';
       return;
     }
 
-    const grades = await API.get('/api/grades?studentId=' + selected.id);
+    const grades = await API.get('/api/grades?studentId=' + selectedStu.id);
     const bySubject = {};
     grades.forEach((g) => {
       if (!bySubject[g.subject]) bySubject[g.subject] = [];
@@ -1427,6 +1733,123 @@ initContact('contactTop');
     if (y) window.scrollTo(0, y);
   };
   window.appCloseModal = closeModal;
+  window.appSelClear = () => {
+    clearSel();
+    const btn = document.querySelector('.nav-item[data-section].active');
+    if (btn) navigateTo(btn.dataset.section);
+  };
+  window.appResetFilter = (id) => {
+    const map = { St: fState.students, Pay: fState.payments, Att: fState.attendance };
+    const st = map[id];
+    if (!st) return;
+    st.q = ''; st.cls = ''; st.pay = 'all'; st.fee = 'all'; st.status = 'all'; st.sort = 'name';
+    if (id === 'St') classFilter = '';
+    if (id === 'Att') attendClass = '';
+    const btn = document.querySelector('.nav-item[data-section].active');
+    if (btn) navigateTo(btn.dataset.section);
+  };
+  window.appBulkPay = async (paid) => {
+    const ids = selIds();
+    if (!ids.length) return;
+    const labelName = monthNames()[payMonth - 1];
+    const yes = paid === true || paid === 'true';
+    if (!confirm(`${ids.length} ta o'quvchining ${labelName} to'lovini ${yes ? "to'langan" : "to'lanmagan"} qilamizmi?`)) return;
+    for (const id of ids) await API.post('/api/payments/toggle', { studentId: id, month: payMonth, year: payYear, paid: yes });
+    clearSel();
+    toast(`${ids.length} ta to'lov yangilandi`);
+    await renderPayTable();
+  };
+  window.appBulkAtt = async (status) => {
+    const ids = selIds();
+    if (!ids.length) return;
+    const labels = { present: 'Keldi', late: 'Kechikdi', absent: 'Kelmadi' };
+    if (!confirm(`${ids.length} ta o'quvchining davomatini "${labels[status]}" deb belgilaymizmi?`)) return;
+    for (const id of ids) await API.post('/api/attendance', { studentId: id, date: attendDate, status });
+    clearSel();
+    toast(`${ids.length} ta davomat yangilandi`);
+    await renderAttTable();
+  };
+  window.appBulkMove = () => {
+    const ids = selIds();
+    if (!ids.length) return;
+    const classes = classOptions();
+    showModal(`
+      <div class="modal-header"><h3>${ids.length} ta o'quvchini sinfga o'tkazish</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
+      <div class="modal-body">
+        <div class="form-group"><label>Yangi sinf</label>
+          <select id="bmCls">${classes.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+        </div>
+        <div class="hint">O'quvchilar eski sinfdan chiqariladi. To'lov, davomat va baholar saqlanib qoladi.</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="window.appCloseModal()">Bekor</button>
+        <button class="btn btn-primary" id="bmGo">O'tkazish</button>
+      </div>`);
+    document.getElementById('bmGo').addEventListener('click', async () => {
+      const cls = document.getElementById('bmCls').value;
+      if (!cls) return;
+      document.getElementById('bmGo').disabled = true;
+      try {
+        for (const id of ids) await API.put('/api/students/' + id, { className: cls });
+        closeModal();
+        clearSel();
+        toast(`${ids.length} ta o'quvchi "${cls}" sinfiga o'tkazildi`);
+        students = [];
+        await renderStudents();
+      } catch (e) { toast(e.message, 'error'); document.getElementById('bmGo').disabled = false; }
+    });
+  };
+  window.appBulkDelete = async () => {
+    const ids = selIds();
+    if (!ids.length) return;
+    const names = ids.map((i) => { const s = students.find((x) => x.id === i); return s ? s.lastName : ''; }).filter(Boolean);
+    if (!confirm(`${ids.length} ta o'quvchining barcha ma\'lumotlari (to\'lov, davomat, baholar, tibbiy) butunlay o\'chiriladi.\n\nDavom etasizmi?`)) return;
+    const typed = prompt(`Tasdiqlash uchun ${ids.length} raqamini yozing:`);
+    if (String(typed).trim() !== String(ids.length)) return toast('Raqam mos kelmadi — bekor qilindi', 'error');
+    for (const id of ids) {
+      try { await API.del('/api/students/' + id); } catch (e) { /* davom etamiz */ }
+    }
+    closeModal();
+    clearSel();
+    students = [];
+    toast(`${ids.length} ta o'quvchi o'chirildi`, 'error');
+    await renderStudents();
+  };
+  window.appBulkMessage = () => {
+    const ids = selIds();
+    if (!ids.length) return;
+    if (ids.length > 50 && !confirm(`${ids.length} ta ota-onaga xabar yuborasizmi? Ko'p xabar osongina spamga tushishi mumkin.`)) return;
+    showModal(`
+      <div class="modal-header"><h3>${ids.length} ta ota-onaga xabar</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
+      <div class="modal-body">
+        <div class="form-group"><label>Xabar matni *</label>
+          <textarea id="bmText" rows="5" maxlength="2000" placeholder="Masalan: Hurmatli ota-ona, ertaga mashq 8:00 da boshlanadi. Davomatni tekshirib boring."></textarea>
+        </div>
+        <div class="hint">Xabar sayt ichidagi xabarlar orqali yuboriladi. Har bir ota-ona o'z farzandiga tegishli xabarni oladi.</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="window.appCloseModal()">Bekor</button>
+        <button class="btn btn-primary" id="bmSend">Yuborish</button>
+      </div>`);
+    const btn = document.getElementById('bmSend');
+    btn.addEventListener('click', async () => {
+      const text = document.getElementById('bmText').value.trim();
+      if (!text) return toast('Xabar matni kiritilmagan', 'error');
+      btn.disabled = true;
+      btn.textContent = 'Yuborilmoqda...';
+      try {
+        const r = await API.post('/api/chat/bulk', { studentIds: ids, text });
+        closeModal();
+        clearSel();
+        toast(`${r.sent} ta ota-onaga yuborildi` + (r.skipped ? ` (${r.skipped} ta ota-ona topilmadi)` : ''));
+        students = [];
+      } catch (e) {
+        toast(e.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Yuborish';
+      }
+    });
+  };
   window.appAddStudent = () => studentModal();
   window.appEditStudent = (id) => editStudent(id);
   window.appDeleteStudent = (id) => deleteStudent(id);
