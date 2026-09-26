@@ -47,6 +47,7 @@
     content.innerHTML = '<div class="empty-state">Yuklanmoqda...</div>';
     try {
       await loadData();
+      await renderTelegramBar();
       if (section === 'overview') renderOverview();
       else if (section === 'student') renderStudent();
       else if (section === 'grades') renderGrades();
@@ -60,9 +61,41 @@
     }
   }
 
+  // ---------- TELEGRAM ULASH ----------
+  let tgBar = null;
+
+  async function renderTelegramBar() {
+    const host = document.getElementById('tgBar');
+    if (!host) return;
+    try {
+      const t = await API.get('/api/telegram/my');
+      tgBar = t;
+      if (!t.configured || !t.bot) { host.innerHTML = ''; return; }
+      if (t.linked) {
+        host.innerHTML = `<div class="tg-bar ok">
+          <span>✅ Telegram ulangan — xabarlar shu yerga keladi</span>
+          <button class="btn btn-ghost btn-sm" onclick="window.appTgRotate()">🔄 Qayta ulash</button>
+        </div>`;
+      } else {
+        host.innerHTML = `<div class="tg-bar">
+          <span>📱 Xabarlarni Telegram'da olish uchun ulaning</span>
+          <a class="btn btn-primary btn-sm" href="${escapeHtml(t.linkUrl || '#')}" target="_blank" rel="noopener">Telegram'ga ulash</a>
+        </div>`;
+      }
+    } catch (e) { host.innerHTML = ''; }
+  }
+
+  window.appTgRotate = async () => {
+    if (!confirm('Eski ulanish bekor qilinadi. Telegram\'da /stop yozib, keyin havolani yana bosishingiz kerak. Davom etasizmi?')) return;
+    try {
+      await API.post('/api/telegram/my/rotate');
+      toast('Yangi havola tayyor');
+      await renderTelegramBar();
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
   function hero() {
-    const s = data.student;
-    return `
+    const s = data.student;    return `
       <div class="parent-hero">
         ${(s.photoUrl || s.photo) ? `<img class="avatar" src="${escapeHtml(s.photoUrl || s.photo)}" alt="foto" loading="lazy">` : `<span class="avatar">${escapeHtml((s.lastName + s.firstName).slice(0, 2))}</span>`}
         <div>

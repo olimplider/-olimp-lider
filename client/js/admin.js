@@ -224,6 +224,7 @@
     teachers: "O'qituvchilar",
     doctors: 'Shifokorlar',
     subjects: 'Fanlar',
+    telegram: 'Telegram bot',
     settings: 'Sozlamalar',
   };
 
@@ -255,6 +256,7 @@
       else if (section === 'teachers') await renderTeachers();
       else if (section === 'doctors') await renderDoctors();
       else if (section === 'subjects') await renderSubjects();
+      else if (section === 'telegram') await renderTelegram();
       else if (section === 'settings') renderSettings();
     } catch (e) {
       content.innerHTML = '<div class="alert-error" style="display:block;max-width:500px;margin:20px auto;">' + escapeHtml(e.message) + '</div>';
@@ -1675,6 +1677,169 @@ initContact('contactTop');
         </div>
       </div>`;
   }
+
+  // ---------- TELEGRAM BOT ----------
+  let tgData = null;
+
+  async function renderTelegram() {
+    topbarActions.innerHTML = '';
+    let d;
+    try {
+      d = await API.get('/api/telegram/status');
+    } catch (e) {
+      content.innerHTML = `<div class="panel"><div class="empty-state"><h4>Xato</h4><p class="muted">${escapeHtml(e.message)}</p></div></div>`;
+      return;
+    }
+    tgData = d;
+
+    if (!d.configured || !d.bot) {
+      content.innerHTML = `<div class="panel"><div class="empty-state">
+        <h4>Bot sozlanmagan</h4>
+        <p class="muted">Serverda <code>TELEGRAM_BOT_TOKEN</code> o'zgaruvchisi yo'q. .env.local fayliga yozing va serverni qayta ishga tushiring.</p>
+      </div></div>`;
+      return;
+    }
+
+    const pct = d.total ? Math.round((d.linked / d.total) * 100) : 0;
+    const notLinked = d.list.filter((x) => !x.linked);
+    const yesLinked = d.list.filter((x) => x.linked);
+    const classes = [...new Set(d.list.map((x) => x.className).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'uz'));
+
+    const rowOf = (x) => `<tr>
+      ${selCell(x.userId)}
+      <td><b>${escapeHtml(x.name || '—')}</b><div class="sub">${escapeHtml(x.parentName || '')}</div></td>
+      <td><span class="badge badge-purple">${escapeHtml(x.className || '—')}</span></td>
+      <td>${escapeHtml(x.phone || '—')}</td>
+      <td>${x.linked
+        ? `<span class="pay-status ok">✓ Ulangan${x.tgUsername ? ' (@' + escapeHtml(x.tgUsername) + ')' : ''}</span>`
+        : '<span class="pay-status no">✗ Ulanmagan</span>'}</td>
+      <td class="actions">
+        <button class="btn btn-outline btn-sm" onclick="window.appTgLink(${x.userId})">🔗 Havola</button>
+        ${x.linked ? `<button class="btn btn-danger btn-sm" onclick="window.appTgUnlink(${x.userId})">Uzish</button>` : ''}
+      </td>
+    </tr>`;
+
+    content.innerHTML = `
+      <div class="panel">
+        <div class="panel-header"><h3>Telegram bot</h3><span class="badge badge-blue">@${escapeHtml(d.bot.username)}</span></div>
+        <div class="panel-body">
+          <div class="progress-wrap" style="margin-bottom:10px"><div class="progress"><div style="width:${pct}%;background:linear-gradient(90deg,#d4af37,#b8922e)"></div></div><span style="font-size:14px;font-weight:600">${d.linked} / ${d.total} ota-ona ulangan (${pct}%)</span></div>
+          <div class="hint">Ota-ona saytga kirib "Telegram\'ga ulash" tugmasini bosadi — shundan keyin shu yerda xabar oladi. Ulanmagan ota-onalarga xabar yetib bormaydi.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header"><h3>✉️ Xabar yuborish</h3></div>
+        <div class="panel-body">
+          <div class="form-group"><label>Xabar matni</label><textarea id="tgText" rows="4" maxlength="4000" placeholder="Hurmatli ota-ona, ... "></textarea></div>
+          <div class="form-group"><label>Kimga</label>
+            <select id="tgAudience">
+              <option value="all">Barcha ota-onalar</option>
+              ${classes.map((c) => `<option value="cls:${escapeHtml(c)}">Faqat ${escapeHtml(c)} sinfi</option>`).join('')}
+              <option value="selected">Tanlangan ota-onalar (pastdagi jadvaldan)</option>
+            </select>
+          </div>
+          <div class="panel-actions">
+            <button class="btn btn-primary" onclick="window.appTgSend()">Yuborish</button>
+            <button class="btn btn-outline" onclick="window.appTgRemind()">💰 Oylik to'lov eslatmasi</button>
+          </div>
+          <div class="hint" id="tgResult"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header"><h3>Ulanmagan ota-onalar</h3><span class="badge badge-amber">${notLinked.length}</span></div>
+        ${notLinked.length ? `<div class="table-wrap"><table>
+          <thead><tr><th style="width:52px">T/r</th><th>O'quvchi</th><th>Ota-ona</th><th>Telefon</th><th></th></tr></thead>
+          <tbody>${notLinked.map((x, i) => `<tr><td class="rownum">${i + 1}</td>
+            <td><b>${escapeHtml(x.name || '—')}</b></td>
+            <td><span class="badge badge-purple">${escapeHtml(x.className || '—')}</span></td>
+            <td>${escapeHtml(x.phone || '—')}</td>
+            <td class="actions"><button class="btn btn-outline btn-sm" onclick="window.appTgLink(${x.userId})">🔗 Havola</button></td>
+          </tr>`).join('')}</tbody></table></div>`
+        : '<div class="panel-body"><p class="empty-note">Barcha ota-onalar ulangan ✅</p></div>'}
+      </div>
+
+      <div class="panel">
+        <div class="panel-header"><h3>Ulangan ota-onalar</h3><span class="badge badge-blue">${yesLinked.length}</span></div>
+        ${yesLinked.length ? `<div class="table-wrap"><table>
+          <thead><tr><th style="width:52px">T/r</th><th>O'quvchi</th><th>Sinf</th><th>Telefon</th><th>Holat</th><th></th></tr></thead>
+          <tbody>${yesLinked.map((x, i) => `<tr><td class="rownum">${i + 1}</td>
+            <td><b>${escapeHtml(x.name || '—')}</b><div class="sub">${escapeHtml(x.parentName || '')}</div></td>
+            <td><span class="badge badge-purple">${escapeHtml(x.className || '—')}</span></td>
+            <td>${escapeHtml(x.phone || '—')}</td>
+            <td>${x.linked ? `<span class="pay-status ok">✓ Ulangan${x.tgUsername ? ' (@' + escapeHtml(x.tgUsername) + ')' : ''}</span>` : ''}</td>
+            <td class="actions">
+              <button class="btn btn-outline btn-sm" onclick="window.appTgLink(${x.userId})">🔗 Havola</button>
+              <button class="btn btn-danger btn-sm" onclick="window.appTgUnlink(${x.userId})">Uzish</button>
+            </td>
+          </tr>`).join('')}</tbody></table></div>`
+        : '<div class="panel-body"><p class="empty-note">Hali hech kim ulanmagan.</p></div>'}
+      </div>`;
+  }
+
+  window.appTgSend = async () => {
+    const text = document.getElementById('tgText').value.trim();
+    const aud = document.getElementById('tgAudience').value;
+    const box = document.getElementById('tgResult');
+    if (!text) return toast('Xabar matni kiritilmagan', 'error');
+    if (aud === 'selected' && !selected.size) return toast('Jadvaldan ota-onalarni tanlang (chapdagi checkbox)', 'error');
+    const body = { text };
+    if (aud.startsWith('cls:')) body.className = aud.slice(4);
+    if (aud === 'selected') body.studentIds = [...selected];
+    if (!confirm('Yuborishni tasdiqlaysizmi?')) return;
+    box.textContent = 'Yuborilmoqda...';
+    try {
+      const r = await API.post('/api/telegram/broadcast', body);
+      box.innerHTML = `✅ Yuborildi: <b>${r.sent}</b> · ulanmagan: <b>${r.noLink}</b> · xato: <b>${r.failed}</b>`;
+      clearSel();
+      toast('Xabar yuborildi');
+    } catch (e) {
+      box.textContent = '';
+      toast(e.message, 'error');
+    }
+  };
+
+  window.appTgRemind = async () => {
+    const now = new Date();
+    if (!confirm(`${now.toLocaleDateString('uz-UZ')} oy uchun to'lov qilinmagan ota-onalarga eslatma yuborilsinmi?`)) return;
+    try {
+      const r = await API.post('/api/telegram/remind-payments', { month: now.getMonth() + 1, year: now.getFullYear() });
+      toast(r.message ? r.message : `Eslatma yuborildi: ${r.sent} ta (ulangan), ${r.noLink} ta ulanmagan`);
+      if (r.debt) await renderTelegram();
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.appTgLink = async (userId) => {
+    try {
+      const r = await API.post('/api/telegram/relink', { userId });
+      const text = '📱 Bu Telegram bot havolasini ota-onaga yuboring:\n\n' + r.linkUrl + '\n\n(Ota-ona havolani bosganda avtomatik ulanadi)';
+      showModal(`
+        <div class="modal-header"><h3>Telegram ulash havolasi</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
+        <div class="modal-body">
+          <div class="form-group"><label>Havola</label><input id="tgLinkUrl" readonly value="${escapeHtml(r.linkUrl || '')}"></div>
+          <div class="hint">Eski kod bekor qilindi. Ota-ona ushbu havolani Telegram'da bosishi kerak.</div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="window.appCloseModal()">Yopish</button>
+          <button class="btn btn-primary" onclick="window.appCopyTgLink()">Nusxalash</button>
+        </div>`);
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.appCopyTgLink = () => {
+    const el = document.getElementById('tgLinkUrl');
+    if (el) { el.select(); navigator.clipboard.writeText(el.value).then(() => toast('Nusxalandi')); }
+  };
+
+  window.appTgUnlink = async (userId) => {
+    if (!confirm('Bu ota-onaning Telegram ulanishini uzamizmi?')) return;
+    try {
+      await API.post('/api/telegram/unlink', { userId });
+      toast('Uzildi');
+      await renderTelegram();
+    } catch (e) { toast(e.message, 'error'); }
+  };
 
   async function subjectModal(idx) {
     const subs = await getSubjects();

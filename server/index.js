@@ -8,6 +8,19 @@ const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const db = require('./db');
 const secretPages = require('./secret-pages');
+const telegram = require('./telegram');
+
+// ---------- .env.local yuklash (dotenv o'rniga, minimal) ----------
+// TELEGRAM_BOT_TOKEN kabi maxfiy qiymatlar shu yerda, git'ga tushmaydi.
+try {
+  const envFile = path.join(__dirname, '..', '.env.local');
+  if (fs.existsSync(envFile)) {
+    for (const line of fs.readFileSync(envFile, 'utf8').split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+      if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+    }
+  }
+} catch (e) { /* muhit fayli yo'q — normal */ }
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -887,15 +900,37 @@ app.post('/api/teacher/attendance/bulk', authRequired, teacherOnly, (req, res) =
 
   const ids = new Set(db.store.students.filter((s) => (s.className || '(sinsiz)') === b.className).map((s) => s.id));
   let count = 0;
+  const absentIds = [];
   for (const rec of b.records) {
     const status = rec.status;
     if (!ids.has(Number(rec.studentId)) || !['present', 'absent', 'late'].includes(status)) continue;
     const existing = db.store.attendance.find((a) => a.studentId === Number(rec.studentId) && a.date === date);
     if (existing) existing.status = status;
     else db.store.attendance.push({ id: db.nextId('attendance'), studentId: Number(rec.studentId), date, status });
+    if (status === 'absent') absentIds.push(Number(rec.studentId));
     count++;
   }
   db.saveCollection('attendance');
+
+  // Telegram: "kelmadi" xabarlari ota-onalarga
+  if (absentIds.length && telegram.configured()) {
+    const targetIds = [];
+    for (const sid of absentIds) {
+      const st = db.store.students.find((s) => s.id === sid);
+      const p = st ? telegram.parentUserOf(st) : null;
+      if (p) targetIds.push(p.id);
+    }
+    if (targetIds.length) {
+      Promise.all(targetIds.map((pid) => {
+        const st = db.store.students.find((s) => {
+          const u = telegram.parentUserOf(s);
+          return u && u.id === pid;
+        });
+        return telegram.notifyParents([pid], telegram.textAbsence(st), 'absence');
+      })).catch((e) => console.error('Telegram (absence):', e.message));
+    }
+  }
+
   res.json({ ok: true, count });
 });
 
@@ -1583,6 +1618,101 @@ app.post('/api/teachers/:id/photo', authRequired, adminOnly, upload.single('phot
   res.json({ photo: teacher.photo });
 });
 
+// ---------- Telegram bot: ota-ona uchun ----------
+app.get('/api/telegram/my', authRequired, (req, res) => {
+  const me = db.store.users.find((u) => u.id === req.user.id);
+  if (!me || me.role !== 'parent') return res.status(403).json({ error: 'Faqat ota-ona uchun' });
+  const l = telegram.linkForUser(me.id);
+  res.json({
+    configured: telegram.configured(),
+    bot: telegram.botInfo(),
+    linked: !!l,
+    linkUrl: l ? null : telegram.linkUrlFor(me),
+  });
+});
+
+app.post('/api/telegram/my/rotate', authRequired, (req, res) => {
+  const me = db.store.users.find((u) => u.id === req.user.id);
+  if (!me || me.role !== 'parent') return res.status(403).json({ error: 'Faqat ota-ona uchun' });
+  res.json({ ok: true, linkUrl: telegram.rotateCode(me.id) });
+});
+
+// ---------- Telegram bot: admin uchun ----------
+app.get('/api/telegram/status', authRequired, adminOnly, (req, res) => {
+  const parents = db.store.users.filter((u) => u.role === 'parent');
+  const links = telegram.links();
+  const byUser = new Map(links.map((l) => [l.userId, l]));
+  const list = parents.map((u) => {
+    const st = db.store.students.find((s) => s.id === u.studentId);
+    const l = byUser.get(u.id);
+    return {
+      userId: u.id,
+      name: st ? telegram.fio(st) : u.fullName,
+      className: st ? st.className : '',
+      parentName: u.fullName,
+      phone: st ? st.parentPhone : '',
+      linked: !!l,
+      tgUsername: l ? l.tgUsername : '',
+      linkedAt: l ? l.linkedAt : null,
+      linkUrl: l ? null : telegram.linkUrlFor(u),
+    };
+  });
+  list.sort((a, b) => (a.className || '').localeCompare(b.className || '') || String(a.name).localeCompare(String(b.name)));
+  res.json({
+    configured: telegram.configured(),
+    bot: telegram.botInfo(),
+    total: parents.length,
+    linked: list.filter((x) => x.linked).length,
+    list,
+  });
+});
+
+app.post('/api/telegram/broadcast', authRequired, adminOnly, async (req, res) => {
+  const b = req.body || {};
+  const text = String(b.text || '').trim().slice(0, 4000);
+  if (!text) return res.status(400).json({ error: 'Xabar matni kiritilmadi' });
+  let users = db.store.users.filter((u) => u.role === 'parent');
+  if (b.className) users = users.filter((u) => {
+    const st = db.store.students.find((s) => s.id === u.studentId);
+    return st && st.className === b.className;
+  });
+  if (Array.isArray(b.studentIds) && b.studentIds.length) {
+    const ids = new Set(b.studentIds.map(Number));
+    users = users.filter((u) => ids.has(u.studentId));
+  }
+  if (!users.length) return res.status(400).json({ error: 'Ota-ona topilmadi' });
+  const r = await telegram.notifyParents(users.map((u) => u.id), text, 'manual');
+  res.json(Object.assign({ targeted: users.length }, r));
+});
+
+app.post('/api/telegram/remind-payments', authRequired, adminOnly, async (req, res) => {
+  const b = req.body || {};
+  const now = new Date();
+  const month = Number(b.month) || now.getMonth() + 1;
+  const year = Number(b.year) || now.getFullYear();
+  const payments = db.store.payments.filter((p) => p.month === month && p.year === year);
+  const paidIds = new Set(payments.filter((p) => p.paid).map((p) => p.studentId));
+  const list = db.store.students
+    .filter((s) => Number(s.monthlyFee) > 0 && !paidIds.has(s.id))
+    .map((s) => ({ s, u: telegram.parentUserOf(s) }))
+    .filter((x) => x.u);
+  if (!list.length) return res.json({ sent: 0, noLink: 0, failed: 0, targeted: 0, message: 'To\'lanmagan o\'quvchi topilmadi' });
+  const r = await telegram.notifyParents(list.map((x) => x.u.id), telegram.textDebt(list, month, year), 'payment');
+  res.json(Object.assign({ targeted: list.length, debt: list.reduce((a, x) => a + (Number(x.s.monthlyFee) || 0), 0) }, r));
+});
+
+app.post('/api/telegram/relink', authRequired, adminOnly, (req, res) => {
+  const userId = Number((req.body || {}).userId);
+  const u = db.store.users.find((x) => x.id === userId && x.role === 'parent');
+  if (!u) return res.status(404).json({ error: 'Ota-ona topilmadi' });
+  res.json({ ok: true, linkUrl: telegram.rotateCode(userId) });
+});
+
+app.post('/api/telegram/unlink', authRequired, adminOnly, (req, res) => {
+  const userId = Number((req.body || {}).userId);
+  res.json({ ok: telegram.unlinkUser(userId) });
+});
+
 // ---------- Ota-ona login/parolini ko'rish va qayta yaratish ----------
 app.get('/api/students/:id/parent-credentials', authRequired, adminOnly, (req, res) => {
   const user = db.store.users.find((u) => u.role === 'parent' && u.studentId === Number(req.params.id));
@@ -1697,6 +1827,17 @@ app.post('/api/attendance', authRequired, adminOnly, (req, res) => {
     db.store.attendance.push({ id: db.nextId('attendance'), studentId, date, status });
   }
   db.saveCollection('attendance');
+
+  // Telegram: "kelmadi" xabari ota-onaga
+  if (status === 'absent' && telegram.configured()) {
+    const st = db.store.students.find((s) => s.id === studentId);
+    const p = st ? telegram.parentUserOf(st) : null;
+    if (p) {
+      telegram.notifyParents([p.id], telegram.textAbsence(st), 'absence')
+        .catch((e) => console.error('Telegram (absence):', e.message));
+    }
+  }
+
   res.json({ ok: true });
 });
 
@@ -1757,7 +1898,7 @@ app.post('/api/grades', authRequired, adminOnly, (req, res) => {
   const { studentId, subject, score, date } = req.body || {};
   if (!studentId || !subject || !score) return res.status(400).json({ error: 'Ma`lumot to`liq emas' });
   const s = Number(score);
-  if (s < 1 || s > 5) return res.status(400).json({ error: 'Bahо 1–5 oralig`ida bo`lishi kerak' });
+  if (s < 1 || s > 5) return res.status(400).json({ error: 'BahO 1–5 oralig`ida bo`lishi kerak' });
 
   db.store.grades.push({
     id: db.nextId('grades'),
@@ -2158,6 +2299,8 @@ db.loadAll()
       console.log(`\n=== OLIMP-LIDER tizimi ishlamoqda ===`);
       console.log(`Lokal manzil:  http://localhost:${PORT}`);
     });
+    // Telegram bot (token bo'lmasa jimgina o'tkazib yuboriladi)
+    telegram.init().catch((e) => console.error('Telegram bot:', e.message));
   })
   .catch((e) => {
     console.error('Ishga tushirishda xato:', e.message);
