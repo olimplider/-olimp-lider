@@ -7,6 +7,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const db = require('./db');
+const secretPages = require('./secret-pages');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -47,8 +48,10 @@ app.use('/api/', apiLimiter);
 
 app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '7d' }));
 
-// ---------- Statik frontend ----------
+// ---------- Statik frontend (faqat css/js/assets) ----------
+// HTML sahifalar views/ papkasida va faqat maxfiy kalit orqali beriladi.
 const CLIENT_DIR = path.join(__dirname, '..', 'client');
+const VIEWS_DIR = path.join(__dirname, '..', 'views');
 app.use(express.static(CLIENT_DIR, {
   maxAge: '7d',
   etag: true,
@@ -58,7 +61,27 @@ app.use(express.static(CLIENT_DIR, {
   },
 }));
 
-app.get('/', (req, res) => res.redirect('/login.html'));
+// ---------- Maxfiy sahifalarni ochish ----------
+// /site?<maxfiy-kalit>  ->  mos HTML fayl
+app.get(secretPages.GATE_PATH, (req, res) => {
+  const key = secretPages.extractKey(req.originalUrl);
+  const file = secretPages.pageForKey(key);
+  if (!file) return res.status(404).send('404');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(VIEWS_DIR, file));
+});
+
+// Eski ochiq manzillar bloklanadi: .html faqat /site orqali beriladi
+app.use((req, res, next) => {
+  if (/\.html$/i.test(req.path)) return res.status(404).send('404');
+  next();
+});
+
+// ---------- Asosiy manzil: olimplider.uz -> kirish sahifasi ----------
+app.get('/', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(VIEWS_DIR, 'login.html'));
+});
 
 // ---------- Photo endpoints (base64 dan raw image + cache) ----------
 function sendPhoto(record, res) {
@@ -119,6 +142,21 @@ function ensureUniqueUsername(username) {
   return candidate;
 }
 
+function sortStudents(list) {
+  return list.slice().sort((a, b) => {
+    const c = String(a.lastName || '').localeCompare(String(b.lastName || ''));
+    if (c !== 0) return c;
+    return String(a.firstName || '').localeCompare(String(b.firstName || ''));
+  });
+}
+
+// 1- va 2-sinflar 5 kun, qolgan sinflar 6 kun
+function lessonDaysFor(className) {
+  const m = String(className || '').match(/^(\d+)/);
+  const grade = m ? Number(m[1]) : 0;
+  return grade === 1 || grade === 2 ? 5 : 6;
+}
+
 function makePassword(len) {
   const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
   let p = '';
@@ -151,13 +189,13 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(401).json({ error: 'Login yoki parol noto`g`ri' });
   }
   const token = signToken(user);
-  res.json({ token, role: user.role, fullName: user.fullName, studentId: user.studentId || null, teacherId: user.teacherId || null });
+  res.json({ token, role: user.role, fullName: user.fullName, studentId: user.studentId || null, teacherId: user.teacherId || null, redirect: secretPages.roleUrl(user.role) });
 });
 
 app.get('/api/auth/me', authRequired, (req, res) => {
   const user = db.store.users.find((u) => u.id === req.user.id);
   if (!user) return res.status(404).json({ error: 'Foydalanuvchi topilmadi' });
-  res.json({ id: user.id, username: user.username, role: user.role, fullName: user.fullName, studentId: user.studentId || null, teacherId: user.teacherId || null });
+  res.json({ id: user.id, username: user.username, role: user.role, fullName: user.fullName, studentId: user.studentId || null, teacherId: user.teacherId || null, redirect: secretPages.roleUrl(user.role) });
 });
 
 // ---------- Admin sozlamalari (login/parolni o'zgartirish) ----------
@@ -252,6 +290,7 @@ app.put('/api/subjects/:old', authRequired, adminOnly, (req, res) => {
   db.store.teachers = db.store.teachers.map((t) =>
     Array.isArray(t.subjects) ? { ...t, subjects: t.subjects.map((s) => (s === old ? name : s)) } : t
   );
+  db.store.schedule = db.store.schedule.map((s) => (s.subject === old ? { ...s, subject: name } : s));
   db.saveAll();
   res.json({ ok: true, subjects: subs });
 });
@@ -265,9 +304,71 @@ app.delete('/api/subjects/:name', authRequired, adminOnly, (req, res) => {
   db.store.teachers = db.store.teachers.map((t) =>
     Array.isArray(t.subjects) ? { ...t, subjects: t.subjects.filter((s) => s !== name) } : t
   );
+  db.store.schedule = db.store.schedule
+    .map((s) => (s.subject === name ? { ...s, subject: '', teacherId: null } : s));
   db.saveCollection('subjects');
   db.saveCollection('teachers');
+  db.saveCollection('schedule');
   res.json({ ok: true, subjects: next });
+});
+
+// ---------- Dars jadvali ----------
+const DAY_NAMES = ['', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'];
+const LESSON_COUNT = 6;
+
+// GET /api/schedule?className=X  (ota-ona, o'qituvchi, admin)
+app.get('/api/schedule', authRequired, (req, res) => {
+  const className = String(req.query.className || '').trim();
+  if (!className) return res.status(400).json({ error: 'Sinf nomi ko`rsatilmagan' });
+
+  if (req.user.role === 'teacher') {
+    const t = db.store.teachers.find((x) => x.id === req.user.teacherId) || null;
+    if (!t || !canClass(t, className)) return res.status(403).json({ error: 'Bu sinf sizga biriktirilmagan' });
+  } else if (req.user.role === 'parent') {
+    const s = db.store.students.find((x) => x.id === req.user.studentId);
+    if (!s || (s.className || '(sinsiz)') !== className) return res.status(403).json({ error: 'Bu sinf farzandingizga tegishli emas' });
+  }
+
+  const days = lessonDaysFor(className);
+  const slots = db.store.schedule
+    .filter((s) => s.className === className)
+    .map((s) => ({ dayOfWeek: Number(s.dayOfWeek), lessonNo: Number(s.lessonNo), subject: s.subject || '', teacherId: s.teacherId || null }));
+  res.json({ className, days, lessonCount: LESSON_COUNT, dayNames: DAY_NAMES.slice(1, days + 1), slots });
+});
+
+// PUT /api/schedule  (admin) — sinf jadvalini to'liq almashtirish
+app.put('/api/schedule', authRequired, adminOnly, (req, res) => {
+  const b = req.body || {};
+  const className = String(b.className || '').trim();
+  if (!className) return res.status(400).json({ error: 'Sinf nomi ko`rsatilmagan' });
+  const days = lessonDaysFor(className);
+  const raw = Array.isArray(b.slots) ? b.slots : [];
+
+  const slots = [];
+  for (const r of raw) {
+    const subject = String(r.subject || '').trim();
+    const day = Number(r.dayOfWeek);
+    const no = Number(r.lessonNo);
+    if (!subject) continue;
+    if (!(day >= 1 && day <= days)) continue;
+    if (!(no >= 1 && no <= LESSON_COUNT)) continue;
+    slots.push({ className, dayOfWeek: day, lessonNo: no, subject, teacherId: r.teacherId ? Number(r.teacherId) : null });
+  }
+
+  db.store.schedule = db.store.schedule.filter((s) => s.className !== className).concat(
+    slots.map((s) => ({ id: db.nextId('schedule'), ...s }))
+  );
+  db.saveCollection('schedule');
+  res.json({ ok: true, className, count: slots.length });
+});
+
+// DELETE /api/schedule?className=X  (admin)
+app.delete('/api/schedule', authRequired, adminOnly, (req, res) => {
+  const className = String(req.query.className || '').trim();
+  if (!className) return res.status(400).json({ error: 'Sinf nomi ko`rsatilmagan' });
+  db.store.schedule = db.store.schedule.filter((s) => s.className !== className);
+  db.saveCollection('schedule');
+  res.json({ ok: true });
 });
 
 // ---------- O'qituvchilar ----------
@@ -684,7 +785,7 @@ app.get('/api/teacher/students', authRequired, teacherOnly, (req, res) => {
   if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
   const className = String(req.query.className || '').trim();
   if (!canClass(teacher, className)) return res.status(403).json({ error: 'Bu sinf sizga biriktirilmagan' });
-  const list = db.store.students.filter((s) => (s.className || '(sinsiz)') === className).map((s) => {
+  const list = sortStudents(db.store.students.filter((s) => (s.className || '(sinsiz)') === className)).map((s) => {
     const { photo, ...rest } = s;
     return { ...rest, photoUrl: photo ? '/api/students/' + s.id + '/photo' : null };
   });
@@ -929,7 +1030,7 @@ app.get('/api/teacher/stats', authRequired, teacherOnly, (req, res) => {
 
 // ---------- O'quvchilar ----------
 app.get('/api/students', authRequired, adminOnly, (req, res) => {
-  res.json(db.store.students.map((s) => {
+  res.json(sortStudents(db.store.students).map((s) => {
     const { photo, ...rest } = s;
     return { ...rest, photoUrl: photo ? '/api/students/' + s.id + '/photo' : null };
   }));
@@ -1043,7 +1144,7 @@ app.get('/api/export/class', authRequired, adminOnly, async (req, res) => {
 
   const students = db.store.students
     .filter((s) => (s.className || '(sinsiz)') === className)
-    .sort((a, b) => a.lastName.localeCompare(b.lastName, 'uz'));
+    .sort((a, b) => a.lastName.localeCompare(b.lastName));
 
   const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, TableLayoutType, VerticalAlign, BorderStyle, PageOrientation, AlignmentType } = require('docx');
 
@@ -1142,6 +1243,183 @@ app.get('/api/export/class', authRequired, adminOnly, async (req, res) => {
   res.send(buffer);
 });
 
+// ---------- Ota-ona login/parollarini Word (docx) qilib yuklab olish ----------
+// Har bir ota-ona uchun YANGI parol yaratadi, saqlaydi va Word ga yozadi
+app.get('/api/export/parents', authRequired, adminOnly, async (req, res) => {
+  const className = String(req.query.className || '').trim();
+  if (!className) return res.status(400).json({ error: 'Sinf nomi ko`rsatilmagan' });
+  const students = db.store.students
+    .filter((s) => (s.className || '(sinsiz)') === className)
+    .sort((a, b) => a.lastName.localeCompare(b.lastName));
+  const rows = students.map((s) => {
+    let u = db.store.users.find((x) => x.role === 'parent' && x.studentId === s.id);
+    if (!u) {
+      u = { id: db.nextId('users'), username: ensureUniqueUsername(makeUsername(s.lastName, s.firstName)), passwordHash: null, role: 'parent', fullName: s.parentName || (s.firstName + ' ning ota-onasi'), studentId: s.id };
+      db.store.users.push(u);
+    }
+    const pw = makePassword(8);
+    u.passwordHash = db.hashPassword(pw);
+    return { fio: (s.lastName + ' ' + s.firstName + ' ' + (s.patronymic || '')).trim(), parent: s.parentName || '-', login: u.username, pw };
+  });
+  db.saveCollection('users');
+  const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, TableLayoutType, VerticalAlign, BorderStyle, PageOrientation, AlignmentType } = require('docx');
+  const TNR = 'Times New Roman';
+  const FN = (size) => ({ font: TNR, size });
+  const PAGE_W = 11906, M_SIDE = 567, M_TB = 720;
+  const USABLE = PAGE_W - M_SIDE * 2;
+  const COLS = [700, 3400, 2672, 2000, 2000];
+  const B = { style: BorderStyle.SINGLE, size: 4, color: '000000' };
+  const cell = (text, o) => new TableCell({
+    width: { size: COLS[o.col], type: WidthType.DXA },
+    verticalAlign: VerticalAlign.CENTER,
+    shading: o.sh ? { fill: o.sh, color: 'auto' } : undefined,
+    borders: { top: B, bottom: B, left: B, right: B },
+    children: [new Paragraph({ ...(o.align ? { alignment: o.align } : {}), spacing: { before: 40, after: 40 }, children: [new TextRun({ text, bold: !!(o.bold || o.head), ...FN(o.size || 22) })] })],
+  });
+  const head = new TableRow({ tableHeader: true, children: [
+    cell('T/r', { col: 0, head: 1, align: AlignmentType.CENTER, sh: 'DCE6F1' }),
+    cell("O`quvchi (F.I.Sh.)", { col: 1, head: 1, sh: 'DCE6F1' }),
+    cell('Ota-onasi', { col: 2, head: 1, sh: 'DCE6F1' }),
+    cell('Login', { col: 3, head: 1, align: AlignmentType.CENTER, sh: 'DCE6F1' }),
+    cell('Parol', { col: 4, head: 1, align: AlignmentType.CENTER, sh: 'DCE6F1' }),
+  ]});
+  const body = rows.map((r, i) => new TableRow({ children: [
+    cell(String(i + 1), { col: 0, align: AlignmentType.CENTER }),
+    cell(r.fio, { col: 1 }),
+    cell(r.parent, { col: 2 }),
+    cell(r.login, { col: 3, align: AlignmentType.CENTER, bold: 1 }),
+    cell(r.pw, { col: 4, align: AlignmentType.CENTER, bold: 1 }),
+  ]}));
+  const doc = new Document({
+    styles: { default: { document: { run: { font: TNR, size: 22 } } } },
+    sections: [{ properties: { page: { orientation: PageOrientation.PORTRAIT, size: { width: PAGE_W, height: 16838 }, margin: { top: M_TB, right: M_SIDE, bottom: M_TB, left: M_SIDE } } },
+      children: [
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 60 }, children: [new TextRun({ text: 'OLIMP-LIDER MAXSUS HARBIY SPORT KLUBI', bold: true, ...FN(28) })] }),
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 120 }, children: [new TextRun({ text: className + ' sinfi ota-onalari uchun login va parollar', bold: true, ...FN(26) })] }),
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 260 }, children: [new TextRun({ text: "O`quvchilar soni: " + rows.length + "   |   Sana: " + new Date().toLocaleDateString('uz-UZ'), ...FN(22) })] }),
+        new Table({ width: { size: USABLE, type: WidthType.DXA }, layout: TableLayoutType.FIXED, columnWidths: COLS, rows: [head, ...body] }),
+        new Paragraph({ spacing: { before: 260 }, children: [new TextRun({ text: 'Eslatma: parollar yangi yaratildi va tizimda yangilandi.', italics: true, ...FN(20) })] }),
+      ] }],
+  });
+  const buffer = await Packer.toBuffer(doc);
+  const safe = className.replace(/[^\w\d-]+/g, '_') || 'sinf';
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  res.setHeader('Content-Disposition', 'attachment; filename="' + safe + '_ota-ona_login_parol.docx"');
+  res.send(buffer);
+});
+
+// ---------- O'quvchilar qisqa ro'yxatini Word (docx) qilib yuklab olish (FAMILYA I.O.) ----------
+app.get('/api/export/shortlist', authRequired, adminOnly, async (req, res) => {
+  const className = String(req.query.className || '').trim();
+  if (!className) return res.status(400).json({ error: 'Sinf nomi ko`rsatilmagan' });
+  const students = db.store.students
+    .filter((s) => (s.className || '(sinsiz)') === className)
+    .sort((a, b) => a.lastName.localeCompare(b.lastName));
+  const rows = students.map((s) => {
+    const last = String(s.lastName || '').trim().toUpperCase();
+    const fi = s.firstName ? ' ' + s.firstName.trim().charAt(0).toUpperCase() + '.' : '';
+    const pi = s.patronymic ? s.patronymic.trim().charAt(0).toUpperCase() : '';
+    return last + fi + pi;
+  });
+  const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, TableLayoutType, VerticalAlign, BorderStyle, PageOrientation, AlignmentType } = require('docx');
+  const TNR = 'Times New Roman';
+  const FN = (size) => ({ font: TNR, size });
+  const PAGE_W = 11906, M_SIDE = 567, M_TB = 720;
+  const USABLE = PAGE_W - M_SIDE * 2;
+  const COLS = [1400, 9372];
+  const B = { style: BorderStyle.SINGLE, size: 4, color: '000000' };
+  const cell = (text, o) => new TableCell({
+    width: { size: COLS[o.col], type: WidthType.DXA },
+    verticalAlign: VerticalAlign.CENTER,
+    shading: o.sh ? { fill: o.sh, color: 'auto' } : undefined,
+    borders: { top: B, bottom: B, left: B, right: B },
+    children: [new Paragraph({ ...(o.align ? { alignment: o.align } : {}), spacing: { before: 40, after: 40 }, children: [new TextRun({ text, bold: !!(o.bold || o.head), ...FN(o.size || 22) })] })],
+  });
+  const head = new TableRow({ tableHeader: true, children: [
+    cell('T/r', { col: 0, head: 1, align: AlignmentType.CENTER, sh: 'DCE6F1' }),
+    cell('F.I.Sh. (qisqa)', { col: 1, head: 1, sh: 'DCE6F1' }),
+  ]});
+  const body = rows.map((fio, i) => new TableRow({ children: [
+    cell(String(i + 1), { col: 0, align: AlignmentType.CENTER }),
+    cell(fio, { col: 1, bold: 1 }),
+  ]}));
+  const doc = new Document({
+    styles: { default: { document: { run: { font: TNR, size: 22 } } } },
+    sections: [{ properties: { page: { orientation: PageOrientation.PORTRAIT, size: { width: PAGE_W, height: 16838 }, margin: { top: M_TB, right: M_SIDE, bottom: M_TB, left: M_SIDE } } },
+      children: [
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 60 }, children: [new TextRun({ text: 'OLIMP-LIDER MAXSUS HARBIY SPORT KLUBI', bold: true, ...FN(28) })] }),
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 120 }, children: [new TextRun({ text: className + " sinf o`quvchilarining qisqa ro`yxati", bold: true, ...FN(26) })] }),
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 260 }, children: [new TextRun({ text: "O`quvchilar soni: " + rows.length + "   |   Sana: " + new Date().toLocaleDateString('uz-UZ'), ...FN(22) })] }),
+        new Table({ width: { size: USABLE, type: WidthType.DXA }, layout: TableLayoutType.FIXED, columnWidths: COLS, rows: [head, ...body] }),
+      ] }],
+  });
+  const buffer = await Packer.toBuffer(doc);
+  const safe = className.replace(/[^\w\d-]+/g, '_') || 'sinf';
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  res.setHeader('Content-Disposition', 'attachment; filename="' + safe + '_qisqa_royxat.docx"');
+  res.send(buffer);
+});
+
+// ---------- Sinf oylik to'lovlar jadvalini Word (docx) qilib yuklab olish (12 oy + Imzo) ----------
+app.get('/api/export/payments', authRequired, adminOnly, async (req, res) => {
+  const className = String(req.query.className || '').trim();
+  if (!className) return res.status(400).json({ error: 'Sinf nomi ko`rsatilmagan' });
+  const year = Number(req.query.year) || new Date().getFullYear();
+  const students = db.store.students
+    .filter((s) => (s.className || '(sinsiz)') === className)
+    .sort((a, b) => a.lastName.localeCompare(b.lastName));
+  const paidById = {};
+  db.store.payments
+    .filter((p) => p.paid)
+    .forEach((p) => { (paidById[p.studentId] = paidById[p.studentId] || new Set()).add(Number(p.month) + '-' + Number(p.year)); });
+  const ORDER = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
+  const rows = students.map((s) => {
+    const last = String(s.lastName || '').trim().toUpperCase();
+    const fi = s.firstName ? ' ' + s.firstName.trim().charAt(0).toUpperCase() + '.' : '';
+    const pi = s.patronymic ? s.patronymic.trim().charAt(0).toUpperCase() : '';
+    const paid = paidById[s.id] || new Set();
+    return { fio: last + fi + pi, months: ORDER.map((m) => paid.has(m + '-' + (m >= 9 ? year : year + 1))) };
+  });
+  const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, TableLayoutType, VerticalAlign, BorderStyle, PageOrientation, AlignmentType } = require('docx');
+  const TNR = 'Times New Roman';
+  const FN = (size) => ({ font: TNR, size });
+  const MONTHS = ['Sen', 'Okt', 'Noy', 'Dek', 'Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn', 'Iyl', 'Avg'];
+  const PAGE_W = 16838, M_SIDE = 567, M_TB = 567;
+  const USABLE = PAGE_W - M_SIDE * 2;
+  const COLS = [600, 3000].concat(Array(12).fill(800), [2504]);
+  const B = { style: BorderStyle.SINGLE, size: 4, color: '000000' };
+  const cell = (text, o) => new TableCell({
+    width: { size: COLS[o.col], type: WidthType.DXA },
+    verticalAlign: VerticalAlign.CENTER,
+    shading: o.sh ? { fill: o.sh, color: 'auto' } : undefined,
+    borders: { top: B, bottom: B, left: B, right: B },
+    children: [new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 30, after: 30 }, children: [new TextRun({ text, bold: !!(o.bold || o.head), ...FN(o.size || 20) })] })],
+  });
+  const headCells = [cell('T/r', { col: 0, head: 1, sh: 'DCE6F1' }), cell('F.I.Sh.', { col: 1, head: 1, sh: 'DCE6F1' })]
+    .concat(MONTHS.map((m, i) => cell(m, { col: 2 + i, head: 1, size: 18, sh: 'DCE6F1' })))
+    .concat([cell('Imzo', { col: 14, head: 1, sh: 'DCE6F1' })]);
+  const head = new TableRow({ tableHeader: true, children: headCells });
+  const body = rows.map((r, i) => new TableRow({ children: [cell(String(i + 1), { col: 0 }), cell(r.fio, { col: 1, size: 18 })]
+    .concat(r.months.map((ok, j) => ok ? cell('+', { col: 2 + j, bold: 1, sh: 'C6EFCE' }) : cell('', { col: 2 + j })))
+    .concat([cell('', { col: 14 })]) }));
+  const doc = new Document({
+    styles: { default: { document: { run: { font: TNR, size: 20 } } } },
+    sections: [{ properties: { page: { size: { width: 11906, height: 16838, orientation: PageOrientation.LANDSCAPE }, margin: { top: M_TB, right: M_SIDE, bottom: M_TB, left: M_SIDE } } },
+      children: [
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 60 }, children: [new TextRun({ text: 'OLIMP-LIDER MAXSUS HARBIY SPORT KLUBI', bold: true, ...FN(28) })] }),
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 120 }, children: [new TextRun({ text: className + ' sinfi — ' + year + '/' + (year + 1) + " o`quv yili oylik to`lovlar jadvali", bold: true, ...FN(26) })] }),
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 200 }, children: [new TextRun({ text: "O`quvchilar soni: " + rows.length + "   |   Sana: " + new Date().toLocaleDateString('uz-UZ'), ...FN(20) })] }),
+        new Table({ width: { size: USABLE, type: WidthType.DXA }, layout: TableLayoutType.FIXED, columnWidths: COLS, rows: [head, ...body] }),
+        new Paragraph({ spacing: { before: 300 }, children: [new TextRun({ text: 'Qabul qiluvchi (mas`ul xodim) imzosi: _________________  / _________________ /', ...FN(22) })] }),
+      ] }],
+  });
+  const buffer = await Packer.toBuffer(doc);
+  const safe = className.replace(/[^\w\d-]+/g, '_') || 'sinf';
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  res.setHeader('Content-Disposition', 'attachment; filename="' + safe + '_' + year + '-' + (year + 1) + '_tolovlar.docx"');
+  res.send(buffer);
+});
+
 // ---------- Oylik baholarni Word (docx) qilib yuklab olish ----------
 const monthNamesUz = () => ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
 app.get('/api/export/grades', authRequired, async (req, res) => {
@@ -1162,7 +1440,7 @@ app.get('/api/export/grades', authRequired, async (req, res) => {
 
   const students = db.store.students
     .filter((s) => (s.className || '(sinsiz)') === className)
-    .sort((a, b) => a.lastName.localeCompare(b.lastName, 'uz'));
+    .sort((a, b) => a.lastName.localeCompare(b.lastName));
   if (!students.length) return res.status(400).json({ error: 'Bu sinfda o`quvchi yo`q' });
 
   const prefix = `${year}-${String(month).padStart(2, '0')}`;
@@ -1551,6 +1829,64 @@ app.get('/api/parent', authRequired, (req, res) => {
   res.json({ student, grades, attendance, payments, subjectAverages, avgGrade, diary, teachers, medical, todayHealth, healthHistory });
 });
 
+// ---------- Ota-ona: farzand ma'lumotlarini o'zi tahrirlashi ----------
+function parentOf(req, res) {
+  if (req.user.role !== 'parent') {
+    res.status(403).json({ error: 'Ruxsat yo`q' });
+    return null;
+  }
+  const student = db.store.students.find((s) => s.id === req.user.studentId);
+  if (!student) {
+    res.status(404).json({ error: 'Farzand topilmadi' });
+    return null;
+  }
+  return student;
+}
+
+app.put('/api/parent/student', authRequired, (req, res) => {
+  const student = parentOf(req, res);
+  if (!student) return;
+  const b = req.body || {};
+  if (b.firstName !== undefined && !String(b.firstName).trim()) return res.status(400).json({ error: 'Ism bo`sh bo`lishi mumkin emas' });
+  if (b.lastName !== undefined && !String(b.lastName).trim()) return res.status(400).json({ error: 'Familiya bo`sh bo`lishi mumkin emas' });
+  if (b.birthDate !== undefined && b.birthDate !== null) {
+    const bd = String(b.birthDate);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(bd)) return res.status(400).json({ error: 'Tug`ilgan sana noto`g`ri formatda' });
+  }
+  if (b.firstName !== undefined) student.firstName = String(b.firstName).trim();
+  if (b.lastName !== undefined) student.lastName = String(b.lastName).trim();
+  if (b.patronymic !== undefined) student.patronymic = String(b.patronymic || '').trim();
+  if (b.birthDate !== undefined) student.birthDate = b.birthDate || null;
+  if (b.address !== undefined) student.address = String(b.address || '').trim();
+  if (b.parentPhone !== undefined) student.parentPhone = String(b.parentPhone || '').trim();
+  if (b.parentName !== undefined) student.parentName = String(b.parentName || '').trim();
+
+  const user = db.store.users.find((u) => u.role === 'parent' && u.studentId === student.id);
+  if (user && student.parentName) user.fullName = student.parentName;
+
+  db.saveCollection('students');
+  db.saveCollection('users');
+  const { photo, ...rest } = student;
+  res.json({ ...rest, photoUrl: photo ? '/api/students/' + student.id + '/photo' : null });
+});
+
+app.post('/api/parent/student/photo', authRequired, upload.single('photo'), (req, res) => {
+  const student = parentOf(req, res);
+  if (!student) return;
+  if (!req.file) return res.status(400).json({ error: 'Rasm yuklanmadi' });
+  student.photo = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+  db.saveCollection('students');
+  res.json({ photoUrl: '/api/students/' + student.id + '/photo' });
+});
+
+app.delete('/api/parent/student/photo', authRequired, (req, res) => {
+  const student = parentOf(req, res);
+  if (!student) return;
+  student.photo = null;
+  db.saveCollection('students');
+  res.json({ ok: true });
+});
+
 // ---------- Statistika (dashbord) ----------
 app.get('/api/stats', authRequired, adminOnly, (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
@@ -1579,6 +1915,203 @@ app.get('/api/stats', authRequired, adminOnly, (req, res) => {
     unpaidThisMonth: Math.max(0, expected - thisMonthPaid),
     avgGrade: avgSchool ? Number(avgSchool.toFixed(2)) : null,
   });
+});
+
+// ---------- Chat (xabarlashish) ----------
+function chatAvatar(user) {
+  if (!user) return null;
+  if (user.role === 'parent' && user.studentId) {
+    const st = db.store.students.find((s) => s.id === user.studentId);
+    if (st && st.photo) return '/api/students/' + st.id + '/photo';
+  }
+  if (user.role === 'teacher' && user.teacherId) {
+    const t = db.store.teachers.find((x) => x.id === user.teacherId);
+    if (t && t.photo) return '/api/teachers/' + t.id + '/photo';
+  }
+  if (user.role === 'doctor' && user.doctorId) {
+    const d = db.store.doctors.find((x) => x.id === user.doctorId);
+    if (d && d.photo) return '/api/doctors/' + d.id + '/photo';
+  }
+  return null;
+}
+
+function chatLabel(user) {
+  if (!user) return 'Foydalanuvchi';
+  if (user.role === 'parent' && user.studentId) {
+    const st = db.store.students.find((s) => s.id === user.studentId);
+    return st ? `${st.className || '?'} sinf • ${user.fullName}` : user.fullName;
+  }
+  return user.fullName || user.username;
+}
+
+function roleName(r) {
+  return { admin: 'Admin', teacher: 'O`qituvchi', doctor: 'Shifokor', parent: 'Ota-ona' }[r] || r;
+}
+
+// Kimga yozish mumkin: rolga qarab kontaktlar
+function chatContactsForUser(me) {
+  const all = db.store.users;
+  const contacts = [];
+  const otherIds = new Set();
+
+  if (me.role === 'admin') {
+    // Admin ham mavjud foydalanuvchilarga yozishi mumkin.
+    for (const u of all) {
+      if (u.id === me.id) continue;
+      otherIds.add(u.id);
+    }
+  } else if (me.role === 'parent') {
+    const st = db.store.students.find((s) => s.id === me.studentId);
+    if (st) {
+      const teacherUsers = all.filter((u) => u.role === 'teacher');
+      for (const tu of teacherUsers) {
+        const t = db.store.teachers.find((x) => x.id === tu.teacherId);
+        if (t && t.classes && t.classes.includes(st.className)) otherIds.add(tu.id);
+      }
+    }
+    // Admin va shifokor ham ota-ona uchun mavjud.
+    for (const u of all) {
+      if (u.role === 'admin' || u.role === 'doctor') otherIds.add(u.id);
+    }
+  } else if (me.role === 'teacher') {
+    const t = db.store.teachers.find((x) => x.id === me.teacherId);
+    if (t && t.classes) {
+      const classes = t.classes;
+      const parents = all.filter((u) => u.role === 'parent' && u.studentId);
+      for (const pu of parents) {
+        const st = db.store.students.find((s) => s.id === pu.studentId);
+        if (st && classes.includes(st.className)) otherIds.add(pu.id);
+      }
+    }
+    for (const u of all) {
+      if (u.role === 'admin' || u.role === 'doctor') otherIds.add(u.id);
+    }
+  } else if (me.role === 'doctor') {
+    for (const u of all) {
+      if (u.id === me.id) continue;
+      if (u.role === 'parent' || u.role === 'teacher' || u.role === 'admin') otherIds.add(u.id);
+    }
+  }
+
+  for (const id of otherIds) {
+    const u = all.find((x) => x.id === id);
+    if (!u) continue;
+    contacts.push({
+      id: u.id,
+      role: u.role,
+      roleName: roleName(u.role),
+      fullName: u.fullName,
+      label: chatLabel(u),
+      avatar: chatAvatar(u),
+    });
+  }
+  return contacts;
+}
+
+function messageWith(meId, otherId) {
+  const all = db.store.users;
+  const u = all.find((x) => x.id === otherId);
+  if (!u) return null;
+  const userIds = new Set();
+  for (const c of chatContactsForUser(u)) userIds.add(c.id);
+  return userIds.has(meId);
+}
+
+app.get('/api/chat/contacts', authRequired, (req, res) => {
+  const me = db.store.users.find((u) => u.id === req.user.id);
+  if (!me) return res.status(404).json({ error: 'Foydalanuvchi topilmadi' });
+  res.json(chatContactsForUser(me));
+});
+
+app.get('/api/chat/conversations', authRequired, (req, res) => {
+  const me = db.store.users.find((u) => u.id === req.user.id);
+  if (!me) return res.status(404).json({ error: 'Foydalanuvchi topilmadi' });
+  const all = db.store.users;
+  const convMap = {};
+  for (const m of db.store.messages) {
+    if (m.from !== me.id && m.to !== me.id) continue;
+    const otherId = m.from === me.id ? m.to : m.from;
+    if (!convMap[otherId]) convMap[otherId] = [];
+    convMap[otherId].push(m);
+  }
+  const convs = Object.keys(convMap)
+    .map((oid) => {
+      const o = Number(oid);
+      const usr = all.find((x) => x.id === o);
+      if (!usr || !messageWith(me.id, o)) return null;
+      const msgs = convMap[oid].slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      const last = msgs[msgs.length - 1];
+      const unread = msgs.filter((m) => m.to === me.id && !m.read).length;
+      return {
+        user: { id: usr.id, role: usr.role, roleName: roleName(usr.role), fullName: usr.fullName, label: chatLabel(usr), avatar: chatAvatar(usr) },
+        last: last ? { text: last.text, at: last.createdAt, fromMe: last.from === me.id } : null,
+        unread,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => (b.last ? new Date(b.last.at).getTime() : 0) - (a.last ? new Date(a.last.at).getTime() : 0));
+  res.json(convs);
+});
+
+app.get('/api/chat/history', authRequired, (req, res) => {
+  const me = db.store.users.find((u) => u.id === req.user.id);
+  if (!me) return res.status(404).json({ error: 'Foydalanuvchi topilmadi' });
+  const otherId = Number(req.query.with) || req.query.with;
+  if (!otherId || otherId === me.id) return res.status(400).json({ error: 'Suhbatdosh ko`rsatilmagan' });
+  const other = db.store.users.find((x) => x.id === otherId);
+  if (!other) return res.status(404).json({ error: 'Suhbatdosh topilmadi' });
+  if (!messageWith(me.id, otherId)) return res.status(403).json({ error: 'Bu foydalanuvchi bilan suhbatlashish mumkin emas' });
+  const conv = db.store.messages
+    .filter((m) => (m.from === me.id && m.to === otherId) || (m.from === otherId && m.to === me.id))
+    .slice()
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  res.json(conv);
+});
+
+app.post('/api/chat/send', authRequired, (req, res) => {
+  const me = db.store.users.find((u) => u.id === req.user.id);
+  if (!me) return res.status(404).json({ error: 'Foydalanuvchi topilmadi' });
+  const { to, text } = req.body || {};
+  const toId = Number(to);
+  const other = db.store.users.find((x) => x.id === toId);
+  if (!other) return res.status(400).json({ error: 'Qabul qiluvchi topilmadi' });
+  if (!messageWith(me.id, toId)) return res.status(403).json({ error: 'Bu foydalanuvchiga yozish mumkin emas' });
+  const msgText = String(text || '').trim().slice(0, 2000);
+  if (!msgText) return res.status(400).json({ error: 'Xabar kiritilmadi' });
+  const msg = {
+    id: db.nextId('messages'),
+    from: me.id,
+    to: toId,
+    text: msgText,
+    createdAt: new Date().toISOString(),
+    read: false,
+  };
+  db.store.messages.push(msg);
+  db.saveCollection('messages');
+  res.status(201).json(msg);
+});
+
+app.post('/api/chat/read', authRequired, (req, res) => {
+  const me = db.store.users.find((u) => u.id === req.user.id);
+  if (!me) return res.status(404).json({ error: 'Foydalanuvchi topilmadi' });
+  const of = Number(req.body && req.body.of);
+  let changed = false;
+  for (const m of db.store.messages) {
+    if (m.from === of && m.to === me.id && !m.read) {
+      m.read = true;
+      m.readAt = new Date().toISOString();
+      changed = true;
+    }
+  }
+  if (changed) db.saveCollection('messages');
+  res.json({ ok: true });
+});
+
+app.get('/api/chat/unread', authRequired, (req, res) => {
+  const me = db.store.users.find((u) => u.id === req.user.id);
+  if (!me) return res.status(404).json({ error: 'Foydalanuvchi topilmadi' });
+  const count = db.store.messages.filter((m) => m.to === me.id && !m.read).length;
+  res.json({ count });
 });
 
 db.loadAll()

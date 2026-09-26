@@ -1,3 +1,11 @@
+// Kirish sahifasi asosiy manzilda: olimplider.uz
+// Panel manzillari esa maxfiy va faqat serverdan keladi.
+const LOGIN_URL = '/';
+
+function goLogin() {
+  window.location.href = LOGIN_URL;
+}
+
 const API = {
   getToken() {
     return localStorage.getItem('token');
@@ -28,7 +36,7 @@ const API = {
 
     if (res.status === 401) {
       this.setToken(null);
-      window.location.href = '/login.html';
+      goLogin();
       throw new Error('Session tugagan');
     }
 
@@ -66,6 +74,48 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+
+/* ------------------- TOAST / XABARNOMALAR ------------------- */
+function toastContainer() {
+  let el = document.getElementById('toastWrap');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toastWrap';
+    el.className = 'toast-wrap';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function toast(message, type) {
+  if (!message) return;
+  type = type || 'info';
+  const wrap = toastContainer();
+  const icons = {
+    info: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+    success: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+    error: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+  };
+  const el = document.createElement('div');
+  el.className = 'toast toast-' + type;
+  el.innerHTML = '<span class="toast-icon">' + (icons[type] || icons.info) + '</span>' +
+    '<span class="toast-msg">' + escapeHtml(String(message)) + '</span>' +
+    '<button class="toast-close" aria-label="Yopish">&times;</button>';
+  const remove = () => {
+    el.classList.add('hide');
+    setTimeout(() => el.remove(), 300);
+  };
+  el.querySelector('.toast-close').addEventListener('click', remove);
+  wrap.appendChild(el);
+  setTimeout(remove, type === 'error' ? 5200 : 3600);
+}
+
+window.toast = toast;
+window.toastSuccess = (m) => toast(m, 'success');
+window.toastError = (m) => toast(m, 'error');
+
+// Native alert o'rniga chiroyli, bloklamaydigan toast.
+window.alert = function (msg) { toast(msg, 'error'); };
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);

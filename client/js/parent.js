@@ -1,6 +1,6 @@
 (function () {
   if (API.getRole() !== 'parent') {
-    window.location.href = '/login.html';
+    goLogin();
     return;
   }
 
@@ -14,8 +14,10 @@
 
   const TITLES = {
     overview: 'Umumiy holat',
+    student: 'Farzand ma\'lumotlari',
     grades: 'Baholar',
     attendance: 'Davomat',
+    schedule: 'Dars jadvali',
     diary: 'Kundalik',
     payments: 'To\'lovlar',
     teachers: 'O\'qituvchilar',
@@ -29,6 +31,10 @@
 
   document.querySelectorAll('.nav-item[data-section]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (btn.dataset.section === 'chat') {
+        window.CHAT.open();
+        return;
+      }
       document.querySelectorAll('.nav-item[data-section]').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       section = btn.dataset.section;
@@ -42,8 +48,10 @@
     try {
       await loadData();
       if (section === 'overview') renderOverview();
+      else if (section === 'student') renderStudent();
       else if (section === 'grades') renderGrades();
       else if (section === 'attendance') renderAttendance();
+      else if (section === 'schedule') await renderSchedule();
       else if (section === 'diary') renderDiary();
       else if (section === 'teachers') renderTeachers();
       else if (section === 'payments') renderPayments();
@@ -95,7 +103,7 @@
             const pct = (sa.avg / 5) * 100;
             return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
               <div style="min-width:130px;font-size:14px"><b>${escapeHtml(sa.subject)}</b><span class="muted"> — ${sa.count} baho</span></div>
-              <div class="progress"><div style="width:${pct}%;background:${sa.avg >= 4 ? '#16a34a' : sa.avg >= 3 ? '#d97706' : '#dc2626'}"></div></div>
+              <div class="progress"><div style="width:${pct}%;background:${sa.avg >= 4 ? '#d4af37' : sa.avg >= 3 ? '#b8922e' : '#dc2626'}"></div></div>
               <div style="min-width:40px;text-align:right;font-weight:700">${sa.avg.toFixed(2)}</div>
             </div>`;
           }).join('') : '<p class="empty-note">Hali baholar kiritilmagan.</p>'}
@@ -129,6 +137,120 @@
     `;
   }
 
+  function renderStudent() {
+    const s = data.student;
+    const photoHtml = (s.photoUrl || s.photo)
+      ? '<img class="avatar" style="width:84px;height:84px;border-radius:50%;object-fit:cover" src="' + escapeHtml(s.photoUrl || s.photo) + '" alt="foto">'
+      : '<span class="avatar" style="width:84px;height:84px;border-radius:50%;font-size:30px">' + escapeHtml((s.lastName + s.firstName).slice(0, 2)) + '</span>';
+
+    content.innerHTML = `${hero()}
+      <div class="panel">
+        <div class="panel-header"><h3>Farzand ma'lumotlari</h3><span class="badge badge-blue">O'zingiz tahrirlaysiz</span></div>
+        <div class="panel-body">
+
+          <div style="display:flex;align-items:center;gap:18px;margin-bottom:20px;flex-wrap:wrap">
+            <div id="stuPhoto" style="flex:none">${photoHtml}</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <label class="btn btn-outline btn-sm" style="cursor:pointer">Rasm yuklash
+                <input type="file" id="stuPhotoInput" accept="image/*" style="display:none">
+              </label>
+              ${(s.photoUrl || s.photo) ? '<button class="btn btn-danger btn-sm" id="stuPhotoRemove">Rasmdan olib tashlash</button>' : ''}
+              <span class="sub" style="font-size:12px">JPG/PNG, rasm avtomatik kichraytiriladi</span>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div><label class="toolbar-label">Familiya *</label><input type="text" id="stLastName" value="${escapeHtml(s.lastName)}" placeholder="Familiya"></div>
+            <div><label class="toolbar-label">Ism *</label><input type="text" id="stFirstName" value="${escapeHtml(s.firstName)}" placeholder="Ism"></div>
+            <div class="full"><label class="toolbar-label">Otasining ismi</label><input type="text" id="stPatronymic" value="${escapeHtml(s.patronymic || '')}" placeholder="Otasining ismi"></div>
+            <div><label class="toolbar-label">Tug'ilgan sana</label><input type="date" id="stBirthDate" value="${escapeHtml(s.birthDate || '')}"></div>
+            <div><label class="toolbar-label">Telefon raqam</label><input type="tel" id="stPhone" value="${escapeHtml(s.parentPhone || '')}" placeholder="+998 90 123 45 67"></div>
+            <div class="full"><label class="toolbar-label">Manzil</label><input type="text" id="stAddress" value="${escapeHtml(s.address || '')}" placeholder="Yashash manzili"></div>
+            <div class="full"><label class="toolbar-label">Ota-onaning F.I.Sh</label><input type="text" id="stParentName" value="${escapeHtml(s.parentName || '')}" placeholder="Ota-ona F.I.Sh"></div>
+          </div>
+
+          <div class="modal-actions" style="margin-top:20px">
+            <button class="btn btn-primary" id="stSave">Saqlash</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const preview = document.getElementById('stuPhoto');
+    const fileInp = document.getElementById('stuPhotoInput');
+    if (fileInp) {
+      fileInp.addEventListener('change', async () => {
+        if (!fileInp.files || !fileInp.files[0]) return;
+        const btn = fileInp.closest('label');
+        if (btn) btn.disabled = true;
+        try {
+          const compressed = await compressImage(fileInp.files[0], 400, 533, 0.7);
+          const fd = new FormData();
+          fd.append('photo', compressed);
+          const r = await API.post('/api/parent/student/photo', fd, true);
+          data.student.photoUrl = r.photoUrl;
+          data.student.photo = r.photoUrl;
+          preview.innerHTML = '<img class="avatar" style="width:84px;height:84px;border-radius:50%;object-fit:cover" src="' + escapeHtml(r.photoUrl) + '?v=' + Date.now() + '" alt="foto">';
+          if (!document.getElementById('stuPhotoRemove')) {
+            const wrap = preview.parentElement.querySelector('div');
+            const rm = document.createElement('button');
+            rm.className = 'btn btn-danger btn-sm';
+            rm.id = 'stuPhotoRemove';
+            rm.textContent = 'Rasmdan olib tashlash';
+            wrap.appendChild(rm);
+            rm.addEventListener('click', removePhoto);
+          }
+          toastSuccess('Rasm saqlandi');
+        } catch (e) {
+          toastError(e.message || 'Rasm yuklashda xatolik');
+        } finally {
+          if (btn) btn.disabled = false;
+          fileInp.value = '';
+        }
+      });
+    }
+    document.getElementById('stSave').addEventListener('click', saveStudent);
+    const rm = document.getElementById('stuPhotoRemove');
+    if (rm) rm.addEventListener('click', removePhoto);
+  }
+
+  async function saveStudent() {
+    const body = {
+      lastName: document.getElementById('stLastName').value,
+      firstName: document.getElementById('stFirstName').value,
+      patronymic: document.getElementById('stPatronymic').value,
+      birthDate: document.getElementById('stBirthDate').value || null,
+      parentPhone: document.getElementById('stPhone').value,
+      address: document.getElementById('stAddress').value,
+      parentName: document.getElementById('stParentName').value,
+    };
+    const btn = document.getElementById('stSave');
+    btn.disabled = true;
+    try {
+      const upd = await API.put('/api/parent/student', body);
+      data.student = { ...data.student, ...upd };
+      localStorage.setItem('fullName', upd.parentName || API.getFullName());
+      document.getElementById('userInfo').textContent = '👤 ' + (upd.parentName || API.getFullName());
+      toastSuccess('Ma\'lumotlar saqlandi');
+      renderStudent();
+    } catch (e) {
+      toastError(e.message || 'Saqlashda xatolik');
+      btn.disabled = false;
+    }
+  }
+
+  async function removePhoto() {
+    try {
+      await API.del('/api/parent/student/photo');
+      data.student.photo = null;
+      data.student.photoUrl = null;
+      toastSuccess('Rasm o\'chirildi');
+      renderStudent();
+    } catch (e) {
+      toastError(e.message || 'Xatolik');
+    }
+  }
+
   function renderGrades() {
     const bySubject = {};
     data.grades.forEach((g) => {
@@ -148,6 +270,46 @@
     }).join('');
 
     content.innerHTML = `${hero()}${cards || '<div class="panel"><div class="empty-state"><h4>Baholar yo\'q</h4></div></div>'}`;
+  }
+
+  // ---------- DARS JADVALI (ota-ona uchun, faqat ko'rish) ----------
+  const SHORT_DAYS = ['Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh'];
+
+  async function renderSchedule() {
+    const cls = (data.student && data.student.className) || '';
+    if (!cls) {
+      content.innerHTML = `${hero()}<div class="panel"><div class="empty-state"><h4>Farzandingizga sinf biriktirilmagan</h4></div></div>`;
+      return;
+    }
+    let d;
+    try {
+      d = await API.get('/api/schedule?className=' + encodeURIComponent(cls));
+    } catch (e) {
+      content.innerHTML = `${hero()}<div class="panel"><div class="empty-state"><h4>Dars jadvali hali kiritilmagan</h4></div></div>`;
+      return;
+    }
+    const map = {};
+    d.slots.forEach((s) => { map[s.dayOfWeek + '|' + s.lessonNo] = s; });
+
+    const head = '<th class="snum">T/r</th>' + Array.from({ length: d.days }, (_, i) =>
+      `<th class="sday">${SHORT_DAYS[i]}<div class="sdayfull">${escapeHtml(d.dayNames[i])}</div></th>`).join('');
+    let rows = '';
+    for (let no = 1; no <= d.lessonCount; no++) {
+      rows += '<tr><td class="snum">' + no + '</td>';
+      for (let day = 1; day <= d.days; day++) {
+        const s = map[day + '|' + no];
+        rows += `<td class="scell">${s && s.subject
+          ? `<div class="ssubject">${escapeHtml(s.subject)}</div>`
+          : '<div class="sempty">—</div>'}</td>`;
+      }
+      rows += '</tr>';
+    }
+
+    content.innerHTML = `${hero()}
+      <div class="panel">
+        <div class="panel-header"><h3>Dars jadvali — ${escapeHtml(cls)} sinf</h3><span class="badge badge-blue">${d.days} kun</span></div>
+        <div class="sched-wrap"><table class="sched"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>
+      </div>`;
   }
 
   function renderAttendance() {
@@ -240,7 +402,7 @@
     API.setToken(null);
     localStorage.removeItem('role');
     localStorage.removeItem('fullName');
-    window.location.href = '/login.html';
+    goLogin();
   });
 
   let rows = [];

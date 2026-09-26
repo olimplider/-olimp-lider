@@ -3,8 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#10150c">
+  <meta name="theme-color" content="#0e130e">
   <title>OLIMP-LIDER — Kirish</title>
+  <link rel="icon" type="image/png" href="/assets/logo.png">
+  <link rel="apple-touch-icon" href="/assets/logo.png">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -44,10 +46,12 @@
     initContact('contactLine');
     initClock('clock');
 
-    const roleOf = (role) => (role === 'admin' ? '/admin.html' : role === 'teacher' ? '/teacher.html' : role === 'doctor' ? '/doctor.html' : '/parent.html');
+    // Panel manzillari faqat serverdan keladi (kirish qilgan odamga ko'rinadi)
     if (API.getToken()) {
-      const role = API.getRole();
-      window.location.href = roleOf(role);
+      fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + API.getToken() } })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (d && d.redirect) window.location.href = d.redirect; else API.setToken(null); })
+        .catch(() => API.setToken(null));
     }
 
     document.getElementById('togglePass').addEventListener('click', () => {
@@ -82,7 +86,7 @@
         API.setToken(data.token);
         localStorage.setItem('role', data.role);
         localStorage.setItem('fullName', data.fullName || '');
-        window.location.href = roleOf(data.role);
+        window.location.href = data.redirect || LOGIN_URL;
       } catch (err) {
         errorBox.textContent = err.message;
         errorBox.style.display = 'block';

@@ -1,6 +1,6 @@
 (function () {
   if (API.getRole() !== 'admin') {
-    window.location.href = '/login.html';
+    goLogin();
     return;
   }
 
@@ -47,6 +47,7 @@
     students: "O'quvchilar",
     payments: 'Oylik to\'lovlar',
     classes: 'Sinflar',
+    schedule: 'Dars jadvali',
     attendance: 'Davomat',
     grades: 'Baholar',
     teachers: "O'qituvchilar",
@@ -57,6 +58,10 @@
 
   document.querySelectorAll('.nav-item[data-section]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (btn.dataset.section === 'chat') {
+        window.CHAT.open();
+        return;
+      }
       document.querySelectorAll('.nav-item[data-section]').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       navigateTo(btn.dataset.section);
@@ -73,6 +78,7 @@
       else if (section === 'students') await renderStudents();
       else if (section === 'payments') await renderPayments();
       else if (section === 'classes') await renderClasses();
+      else if (section === 'schedule') await renderSchedule();
       else if (section === 'attendance') await renderAttendance();
       else if (section === 'grades') await renderGrades();
       else if (section === 'teachers') await renderTeachers();
@@ -105,7 +111,7 @@
         <div class="panel-header"><h3>Bu oydagi to'lov holati</h3><span class="badge badge-blue">${payPercent}%</span></div>
         <div class="panel-body">
           <div class="progress-wrap">
-            <div class="progress"><div style="width:${payPercent}%;background:linear-gradient(90deg,#4f46e5,#16a34a);"></div></div>
+            <div class="progress"><div style="width:${payPercent}%;background:linear-gradient(90deg,#d4af37,#b8922e);"></div></div>
             <span style="font-size:14px;font-weight:600">${stats.paidThisMonth} / ${total}</span>
           </div>
           ${total === 0 ? '<p class="empty-note" style="margin-top:14px">Hali o\'quvchi qo\'shilmagan.</p>' : ''}
@@ -168,9 +174,13 @@
       return;
     }
 
-    const rows = list.map((s) => {
-      const avg = '—';
+    const sorted = list.slice().sort((a, b) =>
+      String(a.lastName || '').localeCompare(String(b.lastName || '')) ||
+      String(a.firstName || '').localeCompare(String(b.firstName || '')));
+
+    const rows = sorted.map((s, i) => {
       return `<tr>
+        <td class="rownum">${i + 1}</td>
         <td><div class="student-cell">${avatarHtml(s)}<div><div class="name">${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</div><div class="sub">${escapeHtml(s.patronymic)}</div></div></div></td>
         <td><span class="badge badge-purple">${escapeHtml(s.className) || '—'}</span></td>
         <td>${s.monthlyFee ? s.monthlyFee.toLocaleString('ru-RU') + ' so\'m' : '—'}</td>
@@ -183,8 +193,8 @@
       </tr>`;
     }).join('');
 
-    content.innerHTML = `<div class="panel"><div class="panel-header"><h3>O'quvchilar</h3><span class="badge badge-blue">${list.length} ta</span></div><div class="table-wrap"><table>
-      <thead><tr><th>O'quvchi</th><th>Sinf</th><th>Oylik to'lov</th><th>Ota-ona</th><th></th></tr></thead>
+    content.innerHTML = `<div class="panel"><div class="panel-header"><h3>O'quvchilar</h3><span class="badge badge-blue">${sorted.length} ta</span></div><div class="table-wrap"><table>
+      <thead><tr><th style="width:52px">T/r</th><th>O'quvchi</th><th>Sinf</th><th>Oylik to'lov</th><th>Ota-ona</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table></div></div>`;
   }
 
@@ -320,7 +330,7 @@
       <div class="modal-header"><h3>Ota-ona kirishi yaratildi</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
       <div class="modal-body">
         <p style="margin-bottom:16px">O'quvchi <b>${escapeHtml(st.lastName)} ${escapeHtml(st.firstName)}</b> uchun ota-ona kirishi yaratildi. Quyidagi ma'lumotlarni ota-onaga topshiring:</p>
-        <div style="background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:16px 18px">
+        <div style="background:var(--card-2);border:1px solid var(--border);border-radius:12px;padding:16px 18px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
             <div><div class="muted">Login</div><div style="font-size:16px;font-weight:700" id="credUser">${escapeHtml(st.parentUsername)}</div></div>
             <button class="btn btn-outline btn-sm" onclick="window.appCopy('credUser')">Nusxalash</button>
@@ -371,7 +381,7 @@
       <div class="modal-header"><h3>Ota-ona kirishi — ${escapeHtml(s.firstName)} ${escapeHtml(s.lastName)}</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
       <div class="modal-body">
         <div class="hint">Bu oynada ota-ona logini ko'rinadi. Parol xavfsizlik uchun yashiringan — "Yangi parol yaratish" tugmasini bossangiz, yangi parol yaratiladi va shu yerda ko'rsatiladi. Uni ota-onaga bering.</div>
-        <div style="background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:14px">
+        <div style="background:var(--card-2);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:14px">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
             <div><div class="muted">Ota-ona logini (o'zgartirish mumkin)</div>
               <div style="display:flex;gap:8px;align-items:center"><input id="pcUser" style="width:auto;flex:1;font-weight:700" value="yuklanmoqda..."></div>
@@ -454,11 +464,12 @@
     }
 
     let paidCount = 0;
-    const rows = students.map((s) => {
+    const rows = students.map((s, i) => {
       const p = map[s.id];
       const paid = p ? p.paid : false;
       if (paid) paidCount++;
       return `<tr>
+        <td class="rownum">${i + 1}</td>
         <td><div class="student-cell">${avatarHtml(s)}<div><div class="name">${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</div><div class="sub">${escapeHtml(s.className)}</div></div></div></td>
         <td>${s.monthlyFee ? s.monthlyFee.toLocaleString('ru-RU') + ' so\'m' : '—'}</td>
         <td class="switch-cell"><label class="switch"><input type="checkbox" data-pid="${s.id}" ${paid ? 'checked' : ''}><span class="slider"></span></label></td>
@@ -471,10 +482,10 @@
     content.innerHTML = `<div class="panel">
       <div class="panel-header"><h3>${renderMonthsSelect(payMonth).replace(/<option[^>]*>([^<]*)<\/option>/g, '').replace('selected', '')}</h3><span class="badge badge-blue">${paidCount} / ${students.length} to'lagan (${pct}%)</span></div>
       <div class="panel-body" style="padding-top:10px">
-        <div class="progress-wrap" style="margin-bottom:16px"><div class="progress"><div style="width:${pct}%;background:linear-gradient(90deg,#16a34a,#4f46e5)"></div></div></div>
+        <div class="progress-wrap" style="margin-bottom:16px"><div class="progress"><div style="width:${pct}%;background:linear-gradient(90deg,#d4af37,#b8922e)"></div></div></div>
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>O'quvchi</th><th>Oylik to'lov</th><th style="text-align:center">To'lov</th><th>Holat</th></tr></thead>
+        <thead><tr><th style="width:52px">T/r</th><th>O'quvchi</th><th>Oylik to'lov</th><th style="text-align:center">To'lov</th><th>Holat</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
     </div>`;
@@ -536,9 +547,10 @@
 
     const list = attendClass ? students.filter((s) => (s.className || '(sinsiz)') === attendClass) : students;
 
-    const rows = list.map((s) => {
+    const rows = list.map((s, i) => {
       const st = map[s.id] || null;
       return `<tr>
+        <td class="rownum">${i + 1}</td>
         <td><div class="student-cell">${avatarHtml(s)}<div><div class="name">${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</div><div class="sub">${escapeHtml(s.className)}</div></div></div></td>
         <td><button class="btn btn-sm ${st === 'present' ? 'btn-success' : 'btn-ghost'}" onclick="window.appSetAtt(${s.id},'present')">✓ Keldi</button></td>
         <td><button class="btn btn-sm ${st === 'late' ? 'btn-outline' : 'btn-ghost'}" onclick="window.appSetAtt(${s.id},'late')" style="border-color:#d97706;color:#d97706">⏰ Kechikdi</button></td>
@@ -576,7 +588,7 @@
           </div>
         </div>
         <div class="table-wrap"><table>
-          <thead><tr><th>O'quvchi</th><th>Keldi</th><th>Kechikdi</th><th>Kelmadi</th><th></th></tr></thead>
+          <thead><tr><th style="width:52px">T/r</th><th>O'quvchi</th><th>Keldi</th><th>Kechikdi</th><th>Kelmadi</th><th></th></tr></thead>
           <tbody>${rows}</tbody>
         </table></div>
       </div>
@@ -719,7 +731,7 @@
     const balls = grades.filter((g) => g.score === 5).length;
     const fours = grades.filter((g) => g.score === 4).length;
     const threes = grades.filter((g) => g.score === 3).length;
-    return `<div class="panel" style="background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff">
+    return `<div class="panel" style="background:linear-gradient(135deg,#0c0f0a,#151a10);color:#fff;border-color:rgba(212,175,55,.45)">
       <div class="panel-body" style="display:flex;align-items:center;gap:20px">
         ${avatarHtml(s)}
         <div><h3 style="font-size:18px">${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</h3><div style="opacity:.9;font-size:14px">${escapeHtml(s.className)} — ${escapeHtml(s.patronymic)}</div></div>
@@ -805,6 +817,9 @@
         <td>${c.totalFee ? c.totalFee.toLocaleString('ru-RU') + ' so\'m/oy' : '—'}</td>
         <td class="actions">
           <button class="btn btn-outline btn-sm" onclick="window.appOpenClass('${escapeHtml(c.name)}')">O'quvchilarini ko'rish</button>
+          <button class="btn btn-outline btn-sm" onclick="window.appExportParents('${escapeHtml(c.name)}')">Login/parol (Word)</button>
+          <button class="btn btn-outline btn-sm" onclick="window.appExportShort('${escapeHtml(c.name)}')">Qisqa ro'yxat (Word)</button>
+          <button class="btn btn-outline btn-sm" onclick="window.appExportPayments('${escapeHtml(c.name)}')">To'lovlar (Word)</button>
           <button class="btn btn-danger btn-sm" onclick="window.appDeleteClass('${escapeHtml(c.name)}')">Sinfni o'chirish</button>
         </td>
       </tr>`).join('');
@@ -825,6 +840,103 @@
     document.querySelector('[data-section="students"]').classList.add('active');
     navigateTo('students');
   }
+
+  // ---------- DARS JADVALI (admin: to'liq boshqaruv) ----------
+  let schedClass = '';
+  const SHORT_DAYS = ['Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh'];
+
+  async function renderSchedule() {
+    await loadStudents(true);
+    const classes = [...new Set(students.map((s) => s.className).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'uz'));
+    const teachers = await API.get('/api/teachers');
+    topbarActions.innerHTML = '';
+
+    if (!classes.length) {
+      content.innerHTML = `<div class="panel"><div class="empty-state"><h4>Dars jadvali uchun sinf kerak</h4><p class="muted">Avval o'quvchi qo'shib, sinf nomini belgilang.</p></div></div>`;
+      return;
+    }
+    if (!schedClass || !classes.includes(schedClass)) schedClass = classFilter && classes.includes(classFilter) ? classFilter : classes[0];
+
+    const classOpts = classes.map((c) => `<option value="${escapeHtml(c)}"${c === schedClass ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('');
+    content.innerHTML = `
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Dars jadvali</h3>
+          <div class="panel-actions">
+            <select id="schedClass" class="select-inline" onchange="window.appSchedClass(this.value)">${classOpts}</select>
+            <button class="btn btn-outline btn-sm" onclick="window.appSchedClear()">Tozalash</button>
+            <button class="btn btn-primary btn-sm" onclick="window.appSchedSave()">Saqlash</button>
+          </div>
+        </div>
+        <p class="muted" style="margin-bottom:12px">Har katakda fan va o'qituvchini tanlang. Bo'sh kataklar saqlanganda tushirib qoldiriladi.</p>
+        <div class="sched-wrap" id="schedWrap"></div>
+      </div>`;
+    await drawSchedGrid(teachers);
+  }
+
+  async function drawSchedGrid(teachers) {
+    const cls = schedClass;
+    const data = await API.get('/api/schedule?className=' + encodeURIComponent(cls));
+    const days = data.days;
+    const lessonCount = data.lessonCount;
+    const map = {};
+    data.slots.forEach((s) => { map[s.dayOfWeek + '|' + s.lessonNo] = s; });
+
+    // faqat shu sinfda dars beradigan o'qituvchilar
+    const clsTeachers = teachers.filter((t) => Array.isArray(t.classes) && t.classes.includes(cls));
+    const teacherOptions = (tids) => '<option value="">—</option>' + clsTeachers
+      .map((t) => `<option value="${t.id}"${tids.includes(t.id) ? ' selected' : ''}>${escapeHtml(t.fullName)}</option>`).join('');
+
+    const subjects = await getSubjects();
+    const subjOpts = (sel) => '<option value="">—</option>' + subjects.map((s) =>
+      `<option value="${escapeHtml(s)}"${s === sel ? ' selected' : ''}>${escapeHtml(s)}</option>`).join('');
+
+    let head = '<th class="snum">T/r</th>' + Array.from({ length: days }, (_, i) =>
+      `<th class="sday">${SHORT_DAYS[i]}<div class="sdayfull">${escapeHtml(data.dayNames[i])}</div></th>`).join('');
+    let rows = '';
+    for (let no = 1; no <= lessonCount; no++) {
+      rows += '<tr><td class="snum">' + no + '</td>';
+      for (let d = 1; d <= days; d++) {
+        const slot = map[d + '|' + no] || {};
+        rows += `<td class="scell">
+          <select class="sched-in" data-d="${d}" data-n="${no}" data-k="subject">${subjOpts(slot.subject || '')}</select>
+          <select class="sched-in" data-d="${d}" data-n="${no}" data-k="teacherId">${teacherOptions(slot.teacherId ? [slot.teacherId] : [])}</select>
+        </td>`;
+      }
+      rows += '</tr>';
+    }
+    document.getElementById('schedWrap').innerHTML =
+      `<table class="sched"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  let _subjects = [];
+
+  window.appSchedClass = async (v) => {
+    schedClass = v;
+    const teachers = await API.get('/api/teachers');
+    await drawSchedGrid(teachers);
+  };
+
+  window.appSchedSave = async () => {
+    const slots = [...document.querySelectorAll('#schedWrap .sched-in[data-k="subject"]')].map((sel) => {
+      const d = sel.dataset.d, n = sel.dataset.n;
+      const t = document.querySelector(`#schedWrap .sched-in[data-k="teacherId"][data-d="${d}"][data-n="${n}"]`);
+      return { dayOfWeek: Number(d), lessonNo: Number(n), subject: sel.value, teacherId: t && t.value ? Number(t.value) : null };
+    }).filter((s) => s.subject);
+    try {
+      await API.put('/api/schedule', { className: schedClass, slots });
+      toast('Dars jadvali saqlandi (' + slots.length + ' ta dars)');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.appSchedClear = async () => {
+    if (!confirm(schedClass + ' sinfi dars jadvali to\'lanadimi?')) return;
+    try {
+      await API.del('/api/schedule?className=' + encodeURIComponent(schedClass));
+      toast('Dars jadvali tozalandi');
+      await renderSchedule();
+    } catch (e) { toast(e.message, 'error'); }
+  };
 
   async function deleteClass(name) {
     if (!confirm('"' + name + '" sinfi va undagi barcha o\'quvchilarni (to\'lov, davomat, baholar bilan) o\'chirasizmi?')) return;
@@ -866,7 +978,7 @@
           localStorage.removeItem('token');
           localStorage.removeItem('role');
           localStorage.removeItem('fullName');
-          setTimeout(() => { window.location.href = '/login.html'; }, 900);
+          setTimeout(() => { goLogin(); }, 900);
         } catch (e) {
           toast(e.message, 'error');
           btn.disabled = false;
@@ -899,7 +1011,7 @@ initContact('contactTop');
     API.setToken(null);
     localStorage.removeItem('role');
     localStorage.removeItem('fullName');
-    window.location.href = '/login.html';
+    goLogin();
   });
 
   // ---------- KONTAKT (sozlamalar) ----------
@@ -1240,7 +1352,7 @@ initContact('contactTop');
     </div>`;
 
     const chips = subs.map((s, i) => `
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border:1px solid rgba(212,175,55,.25);border-radius:10px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px">
         <span style="font-weight:600">${escapeHtml(s)}</span>
         <div style="display:flex;gap:8px">
           <button class="btn btn-outline btn-sm" onclick="window.appEditSubject(${i})">Tahrirlash</button>
@@ -1378,6 +1490,77 @@ initContact('contactTop');
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = target + '_oquvchilar.docx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      toast('Word fayl yuklab olindi');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
+  window.appExportParents = async (className) => {
+    if (!className) return;
+    if (!confirm(className + ' sinfi ota-onalari uchun YANGI parollar yaratiladi (joriy parollar bekor bo`ladi). Davom etilsinmi?')) return;
+    toast('Login/parollar tayyorlanmoqda...');
+    try {
+      const res = await fetch('/api/export/parents?className=' + encodeURIComponent(className), {
+        headers: { Authorization: 'Bearer ' + API.getToken() },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Yuklab olishda xato');
+      }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = className + '_ota-ona_login_parol.docx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      toast('Word fayl yuklab olindi. Parollar yangilandi!');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
+  window.appExportShort = async (className) => {
+    if (!className) return;
+    toast('Qisqa ro`yxat tayyorlanmoqda...');
+    try {
+      const res = await fetch('/api/export/shortlist?className=' + encodeURIComponent(className), {
+        headers: { Authorization: 'Bearer ' + API.getToken() },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Yuklab olishda xato');
+      }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = className + '_qisqa_royxat.docx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      toast('Word fayl yuklab olindi');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
+  window.appExportPayments = async (className) => {
+    if (!className) return;
+    const year = new Date().getFullYear();
+    toast('To`lovlar jadvali tayyorlanmoqda...');
+    try {
+      const res = await fetch('/api/export/payments?className=' + encodeURIComponent(className) + '&year=' + year, {
+        headers: { Authorization: 'Bearer ' + API.getToken() },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Yuklab olishda xato');
+      }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = className + '_' + year + '-' + (year + 1) + '_tolovlar.docx';
       document.body.appendChild(a);
       a.click();
       a.remove();

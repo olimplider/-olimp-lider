@@ -1,6 +1,6 @@
 (function () {
   if (API.getRole() !== 'teacher') {
-    window.location.href = '/login.html';
+    goLogin();
     return;
   }
 
@@ -36,6 +36,7 @@
     dashboard: 'Dashbord',
     grades: 'Baholar',
     attendance: 'Davomat',
+    schedule: 'Dars jadvali',
     tests: 'Nazorat topshiriqlari',
     stats: 'Statistika (oylik)',
   };
@@ -67,6 +68,10 @@
 
   document.querySelectorAll('.nav-item[data-section]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (btn.dataset.section === 'chat') {
+        window.CHAT.open();
+        return;
+      }
       document.querySelectorAll('.nav-item[data-section]').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       navigate(btn.dataset.section);
@@ -81,6 +86,7 @@
       if (section === 'dashboard') await renderDashboard();
       else if (section === 'grades') await renderGrades();
       else if (section === 'attendance') await renderAttendance();
+      else if (section === 'schedule') await renderSchedule();
       else if (section === 'tests') await renderTests();
       else if (section === 'stats') await renderStats();
     } catch (e) {
@@ -95,6 +101,55 @@
   function subjectOptions(sel) {
     const list = me.teacher.subjects.length ? me.teacher.subjects : SUBJECTS;
     return `<option value="">— Fan tanlang —</option>` + list.map((s) => `<option value="${escapeHtml(s)}" ${s === sel ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('');
+  }
+
+  // ---------- DARS JADVALI (faqat ko'rish) ----------
+  const SHORT_DAYS = ['Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh'];
+  let schedClass = '';
+
+  async function renderSchedule() {
+    await loadMe();
+    const classes = me.teacher.classes || [];
+    topbarActions.innerHTML = '';
+    if (!classes.length) {
+      content.innerHTML = `<div class="panel"><div class="empty-state"><h4>Sizga biriktirilgan sinf yo'q</h4></div></div>`;
+      return;
+    }
+    if (!schedClass || !classes.includes(schedClass)) schedClass = classes[0];
+
+    const opts = classes.map((c) => `<option value="${escapeHtml(c)}"${c === schedClass ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('');
+    content.innerHTML = `
+      <div class="panel">
+        <div class="panel-header">
+          <h3>Dars jadvali</h3>
+          <div class="panel-actions"><select id="tSchedClass" class="select-inline">${opts}</select></div>
+        </div>
+        <div class="sched-wrap" id="schedWrap"></div>
+      </div>`;
+    document.getElementById('tSchedClass').addEventListener('change', (e) => { schedClass = e.target.value; drawSched(); });
+    await drawSched();
+  }
+
+  async function drawSched() {
+    const data = await API.get('/api/schedule?className=' + encodeURIComponent(schedClass));
+    const map = {};
+    data.slots.forEach((s) => { map[s.dayOfWeek + '|' + s.lessonNo] = s; });
+
+    const head = '<th class="snum">T/r</th>' + Array.from({ length: data.days }, (_, i) =>
+      `<th class="sday">${SHORT_DAYS[i]}<div class="sdayfull">${escapeHtml(data.dayNames[i])}</div></th>`).join('');
+    let rows = '';
+    for (let no = 1; no <= data.lessonCount; no++) {
+      rows += '<tr><td class="snum">' + no + '</td>';
+      for (let d = 1; d <= data.days; d++) {
+        const s = map[d + '|' + no];
+        rows += `<td class="scell">${s && s.subject
+          ? `<div class="ssubject">${escapeHtml(s.subject)}</div>`
+          : '<div class="sempty">—</div>'}</td>`;
+      }
+      rows += '</tr>';
+    }
+    document.getElementById('schedWrap').innerHTML =
+      `<table class="sched"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   // ---------- DASHBORD ----------
@@ -126,7 +181,7 @@
       <div class="panel">
         <div class="panel-header"><h3>Eng yaxshi o'quvchilar</h3></div>
         <div class="panel-body">
-          ${st.topStudents.map((p, i) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(212,175,55,.15)">
+          ${st.topStudents.map((p, i) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
             <div style="display:flex;align-items:center;gap:10px"><span class="badge badge-gold" style="min-width:26px">${i + 1}</span><b>${escapeHtml(p.fullName)}</b><span class="muted">${escapeHtml(p.className)}</span></div>
             <span class="badge badge-blue">${p.avg ?? '—'}</span>
           </div>`).join('')}
@@ -141,7 +196,7 @@
             const pct = (s.avg / 5) * 100;
             return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
               <div style="min-width:140px;font-size:14px"><b>${escapeHtml(s.subject)}</b><span class="muted"> — ${s.count}</span></div>
-              <div class="progress"><div style="width:${pct}%;background:${s.avg >= 4 ? '#16a34a' : s.avg >= 3 ? '#d97706' : '#dc2626'}"></div></div>
+              <div class="progress"><div style="width:${pct}%;background:${s.avg >= 4 ? '#d4af37' : s.avg >= 3 ? '#b8922e' : '#dc2626'}"></div></div>
               <div style="min-width:40px;text-align:right;font-weight:700">${s.avg}</div>
             </div>`;
           }).join('')}
@@ -163,7 +218,7 @@
         </div>
       </div>
       <div class="stats-grid">${classCards}</div>
-      <div class="panel" style="background:linear-gradient(135deg,#4f46e5,#1e1b4b);color:#fff">
+      <div class="panel" style="background:linear-gradient(135deg,#0c0f0a,#151a10);color:#fff;border-color:rgba(212,175,55,.45)">
         <div class="topbar" style="position:static;background:transparent;border:0;padding:0 0 6px">
           <span style="font-size:15px;font-weight:700">Jami: ${totalStudents} o'quvchi • ${st.classes.length} sinf</span>
           <button class="btn btn-outline btn-sm" onclick="window.appNav('stats')">Batafsil statistika</button>
@@ -285,9 +340,9 @@
     _jCurrent = { className: cls, subject: subj, month, year };
 
     const days = journalDays(month, year);
-    const head = '<th class="jname">O\'quvchi</th>' + days.map((d) => `<th class="jhead"><div class="jday">${d.day}</div><div class="jwd">${escapeHtml(d.weekday)}</div></th>`).join('') + '<th class="jhead javghead">O\'rtacha</th>';
+    const head = '<th class="jname">T/r</th><th class="jname">O\'quvchi</th>' + days.map((d) => `<th class="jhead"><div class="jday">${d.day}</div><div class="jwd">${escapeHtml(d.weekday)}</div></th>`).join('') + '<th class="jhead javghead">O\'rtacha</th>';
 
-    const rows = students.map((s) => {
+    const rows = students.map((s, i) => {
       let sum = 0, n = 0;
       const cells = days.map((d) => {
         const score = map[s.id + '|' + d.date];
@@ -295,7 +350,7 @@
         return `<td><button class="jcell ${score ? 's' + score : 's0'}" onclick="window.appJCell(${s.id},'${d.date}',this)">${score || ''}</button></td>`;
       }).join('');
       const avg = n ? (sum / n).toFixed(1) : '';
-      return `<tr><td class="jname"><b>${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</b></td>${cells}<td class="javg">${avg}</td></tr>`;
+      return `<tr><td class="jname rownum">${i + 1}</td><td class="jname"><b>${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</b></td>${cells}<td class="javg">${avg}</td></tr>`;
     }).join('');
 
     content.innerHTML = `
@@ -373,9 +428,10 @@
       return;
     }
 
-    const rows = students.map((s) => {
+    const rows = students.map((s, i) => {
       const st = map[s.id] || null;
       return `<tr>
+        <td class="rownum">${i + 1}</td>
         <td><div class="student-cell">${avatarHtml(s)}<div><div class="name">${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</div></div></div></td>
         <td><button class="btn btn-sm ${st === 'present' ? 'btn-success' : 'btn-ghost'}" onclick="window.appSetTAtt(${s.id},'present',this)">✓ Keldi</button></td>
         <td><button class="btn btn-sm ${st === 'late' ? 'btn-outline' : 'btn-ghost'}" onclick="window.appSetTAtt(${s.id},'late',this)" style="border-color:#d97706;color:#d97706">⏰ Kechikdi</button></td>
@@ -401,7 +457,7 @@
         <button class="btn btn-outline btn-sm" onclick="window.appMarkAllPresent()">Hammasini belgilash</button>
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>O'quvchi</th><th>Keldi</th><th>Kechikdi</th><th>Kelmadi</th></tr></thead>
+        <thead><tr><th style="width:52px">T/r</th><th>O'quvchi</th><th>Keldi</th><th>Kechikdi</th><th>Kelmadi</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div></div>`;
   }
@@ -494,15 +550,16 @@
     const map = {};
     (t.results || []).forEach((r) => (map[r.studentId] = r.score));
 
-    const rows = students.map((s) => `
+    const rows = students.map((s, i) => `
       <tr>
+        <td class="rownum">${i + 1}</td>
         <td><div class="student-cell">${avatarHtml(s)}<div><div class="name">${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</div></div></div></td>
         <td><input type="number" class="test-score" data-id="${s.id}" min="0" max="${t.maxScore}" value="${map[s.id] !== undefined ? map[s.id] : ''}" placeholder="—"></td>
       </tr>`).join('');
 
     showModal(`
       <div class="modal-title">${escapeHtml(t.title)} — natijalar (max ${t.maxScore})</div>
-      ${students.length ? `<div style="max-height:340px;overflow:auto"><table><thead><tr><th>O'quvchi</th><th style="width:110px">Ball</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="hint">Bu sinfda o\'quvchi yo\'q.</div>'}
+      ${students.length ? `<div style="max-height:340px;overflow:auto"><table><thead><tr><th style="width:52px">T/r</th><th>O'quvchi</th><th style="width:110px">Ball</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="hint">Bu sinfda o\'quvchi yo\'q.</div>'}
       <div class="modal-actions">
         <button class="btn btn-outline" onclick="window.appCloseModal()">Bekor</button>
         <button class="btn btn-primary" id="ftSave">Saqlash</button>
@@ -586,7 +643,7 @@
     API.setToken(null);
     localStorage.removeItem('role');
     localStorage.removeItem('fullName');
-    window.location.href = '/login.html';
+    goLogin();
   });
 
   // ---------- Global ----------

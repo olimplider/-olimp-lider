@@ -1,6 +1,6 @@
 (function () {
   if (API.getRole() !== 'doctor') {
-    window.location.href = '/login.html';
+    goLogin();
     return;
   }
 
@@ -77,6 +77,10 @@
 
   document.querySelectorAll('.nav-item[data-section]').forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (btn.dataset.section === 'chat') {
+        window.CHAT.open();
+        return;
+      }
       document.querySelectorAll('.nav-item[data-section]').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       navigate(btn.dataset.section);
@@ -365,7 +369,7 @@
     API.setToken(null);
     localStorage.removeItem('role');
     localStorage.removeItem('fullName');
-    window.location.href = '/login.html';
+    goLogin();
   });
 
   // ---------- Global ----------
