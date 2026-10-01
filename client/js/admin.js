@@ -677,12 +677,68 @@
       <div class="toolbar">
         <select id="payMonthSel">${renderMonthsSelect(payMonth)}</select>
         <select id="payYearSel">${renderYearsSelect()}</select>
+        <button class="btn btn-outline btn-sm" onclick="window.appPayRemind()">📢 Telegram eslatma</button>
       </div>`;
 
     document.getElementById('payMonthSel').addEventListener('change', (e) => { payMonth = Number(e.target.value); renderPayTable(); });
     document.getElementById('payYearSel').addEventListener('change', (e) => { payYear = Number(e.target.value); renderPayTable(); });
 
     await renderPayTable();
+  }
+
+  // Faqat joriy ekranda KO'RINAYOTGAN to'lanmagan o'quvchilarga eslatma
+  window.appPayRemind = async () => {
+    let list;
+    try {
+      list = payList().filter((s) => !payMapLive[s.id] && Number(s.monthlyFee) > 0);
+    } catch (e) { return toast(e.message, 'error'); }
+    if (!list.length) return toast('Bu ro\'yxatda to\'lanmagan o\'quvchi yo\'q', 'error');
+    const ids = list.map((s) => s.id);
+    let d;
+    try {
+      d = await API.post('/api/telegram/remind-payments', { month: payMonth, year: payYear, studentIds: ids, preview: true });
+    } catch (e) { return toast(e.message, 'error'); }
+    if (!d.list || !d.list.length) return toast(d.message || 'Topilmadi', 'error');
+
+    const label = monthNames()[payMonth - 1] + ' ' + payYear;
+    const sample = d.list.slice(0, 8).map((x, i) => `${i + 1}. ${escapeHtml(x.fio)} (${escapeHtml(x.className || '—')}) — ${x.fee.toLocaleString('ru-RU')} so'm${x.linked ? '' : ' — <i>Telegram\'ga ulanmagan</i>'}`).join('<br>');
+
+    showModal(`
+      <div class="modal-header"><h3>📢 To'lov eslatmasini yuborish</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
+      <div class="modal-body">
+        <div class="tg-stat-grid">
+          <div><span>Ota-onalar</span><b>${d.targeted}</b></div>
+          <div><span>Telegram'da bor</span><b>${d.linked}</b></div>
+          <div><span>Ulanmagan</span><b>${d.targeted - d.linked}</b></div>
+          <div><span>Jami qarz</span><b>${Number(d.debt).toLocaleString('ru-RU')} so'm</b></div>
+        </div>
+        <div class="hint" style="margin:14px 0 8px">Sana: <b>${escapeHtml(label)}</b> · Ro'yxat: ${fState.payments.cls ? escapeHtml(fState.payments.cls) + ' sinfi' : 'barcha sinflar'}${fState.payments.status === 'unpaid' ? ', faqat to\'lanmaganlar' : ''}${fState.payments.q ? ', qidiruv: "' + escapeHtml(fState.payments.q) + '"' : ''}</div>
+        <div class="tg-preview-list">${sample}${d.list.length > 8 ? `<br><i>... va yana ${d.list.length - 8} ta</i>` : ''}</div>
+        <div class="hint" style="margin-top:14px">Har bir ota-onaga faqat <b>o'z farzandining</b> to'lovi haqida xabar boradi. Boshqa oilalarning ma'lumati ko'rinmaydi.</div>
+        ${d.linked === 0 ? '<div class="alert-error" style="display:block;margin-top:12px">Hozircha hech kim Telegram\'ga ulanmagan — xabar hech kimga yetib bormaydi. Avval ota-onalarni ulang.</div>' : ''}
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="window.appCloseModal()">Bekor</button>
+        <button class="btn btn-primary" id="prGo"${d.linked ? '' : ' disabled'}>Ha, yuborish</button>
+      </div>`);
+
+    const go = document.getElementById('prGo');
+    if (go && d.linked) {
+      go.addEventListener('click', async () => {
+        go.disabled = true;
+        go.textContent = 'Yuborilmoqda...';
+        try {
+          const r = await API.post('/api/telegram/remind-payments', { month: payMonth, year: payYear, studentIds: ids });
+          closeModal();
+          toast(`✅ ${r.sent} ta yuborildi · ${r.noLink} ta ulanmagan · ${r.failed} ta xato`);
+          if (r.noLink) toast(`${r.noLink} ta ota-onaning Telegram'i yo'q — ularga boshqa usul bilan xabar bering`, 'error');
+        } catch (e) {
+          toast(e.message, 'error');
+          go.disabled = false;
+          go.textContent = 'Ha, yuborish';
+        }
+      });
+    }
   }
 
   function payList() {
@@ -713,13 +769,13 @@
     let paidCount = list.filter((s) => payMapLive[s.id]).length;
     const rows = list.map((s, i) => {
       const paid = !!payMapLive[s.id];
-      return `<tr class="${selected.has(s.id) ? 'sel-row' : ''}">
+      return `<tr class="${selected.has(s.id) ? 'sel-row' : ''}${paid ? '' : ' pay-row-unpaid'}">
         ${selCell(s.id)}
         <td class="rownum">${i + 1}</td>
         <td><div class="student-cell">${avatarHtml(s)}<div><div class="name">${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</div><div class="sub">${escapeHtml(s.className)}</div></div></div></td>
         <td>${s.monthlyFee ? s.monthlyFee.toLocaleString('ru-RU') + ' so\'m' : '—'}</td>
         <td class="switch-cell"><label class="switch"><input type="checkbox" data-pid="${s.id}" ${paid ? 'checked' : ''}><span class="slider"></span></label></td>
-        <td><span class="pay-status ${paid ? 'ok' : 'no'}" id="ps-${s.id}">${paid ? '✓ To\'langan' : '✗ To\'lanmagan'}</span></td>
+        <td><span class="pay-status ${paid ? 'badge-ok' : 'badge-no'}" id="ps-${s.id}">${paid ? 'To\'langan' : 'To\'lanmagan'}</span></td>
       </tr>`;
     }).join('');
 
@@ -749,9 +805,11 @@
         await API.post('/api/payments/toggle', { studentId: pid, month: payMonth, year: payYear, paid });
         const st = document.getElementById('ps-' + pid);
         if (st) {
-          st.className = 'pay-status ' + (paid ? 'ok' : 'no');
-          st.textContent = paid ? '✓ ' + labelName + ' uchun to\'landi' : '✗ To\'lanmagan';
+          st.className = 'pay-status ' + (paid ? 'badge-ok' : 'badge-no');
+          st.textContent = paid ? 'To\'langan' : 'To\'lanmagan';
         }
+        const row = chk.closest('tr');
+        if (row) row.classList.toggle('pay-row-unpaid', !paid);
         toast(paid ? (labelName + ' uchun to\'lov tasdiqlandi') : 'To\'lov bekor qilindi');
       });
     });
@@ -1741,9 +1799,9 @@ initContact('contactTop');
           </div>
           <div class="panel-actions">
             <button class="btn btn-primary" onclick="window.appTgSend()">Yuborish</button>
-            <button class="btn btn-outline" onclick="window.appTgRemind()">💰 Oylik to'lov eslatmasi</button>
           </div>
           <div class="hint" id="tgResult"></div>
+          <div class="hint" style="margin-top:10px">Oylik to'lov eslatmasi <b>Oylik to'lovlar</b> bo'limidan yuboriladi — u yerda faqat to'lanmaganlar ko'rinadi.</div>
         </div>
       </div>
 
@@ -1800,15 +1858,7 @@ initContact('contactTop');
     }
   };
 
-  window.appTgRemind = async () => {
-    const now = new Date();
-    if (!confirm(`${now.toLocaleDateString('uz-UZ')} oy uchun to'lov qilinmagan ota-onalarga eslatma yuborilsinmi?`)) return;
-    try {
-      const r = await API.post('/api/telegram/remind-payments', { month: now.getMonth() + 1, year: now.getFullYear() });
-      toast(r.message ? r.message : `Eslatma yuborildi: ${r.sent} ta (ulangan), ${r.noLink} ta ulanmagan`);
-      if (r.debt) await renderTelegram();
-    } catch (e) { toast(e.message, 'error'); }
-  };
+  window.appTgRemind = () => toast('Eslatma endi "Oylik to\'lovlar" bo\'limidan yuboriladi');
 
   window.appTgLink = async (userId) => {
     try {

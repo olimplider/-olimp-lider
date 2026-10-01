@@ -169,6 +169,21 @@ async function notifyParents(userIds, text, kind) {
   return results;
 }
 
+// Har bir ota-onaga ALOHIDA matn (shaxsiy ma'lumot — boshqalarni ko'rmaydi).
+// items: [{ userId, text }]
+async function notifyParentsEach(items, kind) {
+  const results = { sent: 0, noLink: 0, failed: 0 };
+  for (const it of items) {
+    const l = linkForUser(it.userId);
+    if (!l) { results.noLink++; continue; }
+    const n = await sendTo(l.chatId, it.text);
+    if (n > 0) { results.sent++; logEntry({ userId: it.userId, chatId: l.chatId, text: it.text, kind: kind || 'auto', sent: true }); }
+    else results.failed++;
+  }
+  db.saveCollection('telegram_log');
+  return results;
+}
+
 function parentUserOf(student) {
   if (!student) return null;
   return db.store.users.find((u) => u.role === 'parent' && u.studentId === student.id) || null;
@@ -194,17 +209,23 @@ function textAbsence(student) {
   ].join('\n');
 }
 
-function textDebt(list, month, year) {
+// Bitta ota-onaga: FAQAT o'z farzandining to'lovi (boshqa oila ko'rinmaydi)
+function textDebtOne(student, month, year) {
   const s = db.store.settings || {};
-  const head = [
+  const fee = Number(student.monthlyFee || 0);
+  return [
     '💰 OYLIK TO\'LOV ESLATMASI',
     '',
-    `${MONTHS[month]} ${year} — to\'lov qilinmagan:`,
+    'Hurmatli ota-ona,',
+    `${MONTHS[month]} ${year} oyi to'lovi hali qilinmagan.`,
     '',
-  ];
-  const lines = list.map((x) => `• ${fio(x.s)} (${x.s.className || '—'}) — ${Number(x.s.monthlyFee || 0).toLocaleString('ru-RU')} so'm`);
-  const total = list.reduce((a, x) => a + (Number(x.s.monthlyFee) || 0), 0);
-  return head.concat(lines, '', `Jami: ${total.toLocaleString('ru-RU')} so'm`, '', `Tel: ${s.phone || 'Administrator'}`).join('\n');
+    `O'quvchi: ${fio(student)}`,
+    `Sinf: ${student.className || '—'}`,
+    `To'lov: ${fee.toLocaleString('ru-RU')} so'm`,
+    '',
+    'Iltimos, to\'lovni amalga oshiring.',
+    `Tel: ${s.phone || 'Administrator'}`,
+  ].join('\n');
 }
 
 function textMedical(student, expiresAt) {
@@ -510,9 +531,10 @@ module.exports = {
   rotateCode,
   unlinkUser,
   notifyParents,
+  notifyParentsEach,
   parentUserOf,
   textAbsence,
-  textDebt,
+  textDebtOne,
   textMedical,
   fio,
   sendTo,

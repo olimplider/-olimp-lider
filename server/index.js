@@ -1685,20 +1685,56 @@ app.post('/api/telegram/broadcast', authRequired, adminOnly, async (req, res) =>
   res.json(Object.assign({ targeted: users.length }, r));
 });
 
+// Oylik to'lov eslatmasi. studentIds berilsa FAQAT shu o'quvchilarga boradi
+// (admin panelida ko'rinayotgan qatorlar). Berilmasa — butun oy qarzdorlari.
+// preview: true — hech narsa yubormaydi, faqat kimga borishini qaytaradi.
 app.post('/api/telegram/remind-payments', authRequired, adminOnly, async (req, res) => {
   const b = req.body || {};
   const now = new Date();
   const month = Number(b.month) || now.getMonth() + 1;
   const year = Number(b.year) || now.getFullYear();
+  const preview = !!b.preview;
+
   const payments = db.store.payments.filter((p) => p.month === month && p.year === year);
   const paidIds = new Set(payments.filter((p) => p.paid).map((p) => p.studentId));
-  const list = db.store.students
-    .filter((s) => Number(s.monthlyFee) > 0 && !paidIds.has(s.id))
-    .map((s) => ({ s, u: telegram.parentUserOf(s) }))
-    .filter((x) => x.u);
-  if (!list.length) return res.json({ sent: 0, noLink: 0, failed: 0, targeted: 0, message: 'To\'lanmagan o\'quvchi topilmadi' });
-  const r = await telegram.notifyParents(list.map((x) => x.u.id), telegram.textDebt(list, month, year), 'payment');
-  res.json(Object.assign({ targeted: list.length, debt: list.reduce((a, x) => a + (Number(x.s.monthlyFee) || 0), 0) }, r));
+
+  let pool = db.store.students.filter((s) => Number(s.monthlyFee) > 0 && !paidIds.has(s.id));
+  // studentIds berilgan bo'lsa — QAT'IY shu ro'yxat. Bo'sh massiv ham "hech kim"
+  // degani (butun sinflarga ketib qolmasligi uchun).
+  if (Array.isArray(b.studentIds)) {
+    const ids = new Set(b.studentIds.map(Number));
+    pool = pool.filter((s) => ids.has(s.id));
+  }
+
+  const items = [];
+  for (const s of pool) {
+    const u = telegram.parentUserOf(s);
+    if (!u) continue;
+    items.push({ userId: u.id, text: telegram.textDebtOne(s, month, year) });
+  }
+
+  if (!items.length) {
+    return res.json({ sent: 0, noLink: 0, failed: 0, targeted: 0, debt: 0, preview, message: 'To\'lanmagan o\'quvchi topilmadi' });
+  }
+
+  const stats = {
+    targeted: items.length,
+    debt: pool.reduce((a, s) => a + (Number(s.monthlyFee) || 0), 0),
+    linked: items.filter((it) => telegram.linkForUser(it.userId)).length,
+    list: pool.map((s) => ({
+      id: s.id,
+      fio: telegram.fio(s),
+      className: s.className || '',
+      fee: Number(s.monthlyFee || 0),
+      linked: !!telegram.linkForUser(telegram.parentUserOf(s).id),
+    })),
+    preview,
+  };
+
+  if (preview) return res.json(stats);
+
+  const r = await telegram.notifyParentsEach(items, 'payment');
+  res.json(Object.assign({}, stats, r));
 });
 
 app.post('/api/telegram/relink', authRequired, adminOnly, (req, res) => {
