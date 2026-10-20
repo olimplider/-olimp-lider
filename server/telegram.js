@@ -20,6 +20,19 @@ let dailyTimer = null;
 let warned = false;
 let lastSendAt = 0;
 
+// Offset'ni DB ga saqlaymiz — server qayta ishga tushsa, xabarlar
+// qayta yuborilmasligi uchun (Telegram getUpdates offset'ni eslab qoladi).
+function loadOffset() {
+  const st = db.store.settings || {};
+  offset = Number(st.tgOffset) || 0;
+}
+function saveOffset() {
+  const st = db.store.settings || (db.store.settings = {});
+  if (Number(st.tgOffset) === offset) return;
+  st.tgOffset = offset;
+  db.saveCollection('settings');
+}
+
 function token() {
   return process.env.TELEGRAM_BOT_TOKEN || '';
 }
@@ -138,8 +151,8 @@ function rotateCode(userId) {
 // ---------- Yuborish ----------
 function logEntry(entry) {
   logs().push(Object.assign({ id: db.nextId('telegram_log'), at: new Date().toISOString() }, entry));
-  // oxirgi 1000 ta yozuvni saqlash
-  if (logs().length > 1000) db.store.telegram_log = logs().slice(-1000);
+  // oxirgi 200 ta yozuvni saqlash (1000 ta ~700KB egallardi)
+  if (logs().length > 200) db.store.telegram_log = logs().slice(-200);
 }
 
 async function sendTo(chatId, text) {
@@ -440,10 +453,12 @@ async function handleUpdate(u) {
 async function pollOnce() {
   const r = await call('getUpdates', { offset, timeout: 25, allowed_updates: ['message'] });
   if (!r || !r.ok || !Array.isArray(r.result)) return false;
+  let changed = false;
   for (const u of r.result) {
-    if (u.update_id >= offset) offset = u.update_id + 1;
+    if (u.update_id >= offset) { offset = u.update_id + 1; changed = true; }
     await handleUpdate(u);
   }
+  if (changed) saveOffset();
   return true;
 }
 
@@ -510,7 +525,7 @@ async function init() {
     return false;
   }
   bot = me.result;
-  offset = 0;
+  loadOffset();
   await call('deleteWebhook', { drop_pending_updates: false });
   startPolling();
   startDaily();

@@ -50,7 +50,7 @@ const loginLimiter = rateLimit({
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 daqiqa
-  limit: 900, // IP boshiga 900 so'rov
+  limit: 3000, // IP boshiga so'rov (chat paneli har 5s da so'raydi — Wi-Fi orqali umumiy IP bo'lsa 900 yetarli emas edi)
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: 'So\'rovlar soni oshib ketdi. Birozdan so\'ng qayta urinib ko\'ring.' },
@@ -96,10 +96,40 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(VIEWS_DIR, 'login.html'));
 });
 
-// ---------- Photo endpoints (base64 dan raw image + cache) ----------
+// ---------- Rasmlar: faylda saqlanadi (DB da faqat URL) ----------
+// Sabab: base64 rasm DB ga yozilsa, students kolleksiyasi 1.1 MB ga chiqadi
+// va har bir saqlashda butun kolleksiya qayta yoziladi.
+const PHOTO_EXT = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif' };
+
+function savePhotoFile(buffer, mimetype, prefix) {
+  const ext = PHOTO_EXT[mimetype] || '.jpg';
+  const name = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+  fs.writeFileSync(path.join(UPLOAD_DIR, name), buffer);
+  return '/uploads/' + name;
+}
+
+function removePhotoFile(photoUrl) {
+  if (!photoUrl || !String(photoUrl).startsWith('/uploads/')) return;
+  try { fs.unlinkSync(path.join(UPLOAD_DIR, path.basename(String(photoUrl)))); } catch (e) { /* fayl yo'q */ }
+}
+
+function setPhoto(record, buffer, mimetype, prefix) {
+  const old = record.photo;
+  record.photo = savePhotoFile(buffer, mimetype, prefix);
+  if (old && String(old).startsWith('/uploads/')) removePhotoFile(old);
+}
+
+// ---------- Photo endpoints (fayl yoki base64 + cache) ----------
 function sendPhoto(record, res) {
   if (!record || !record.photo) return res.status(404).json({ error: 'Rasm topilmadi' });
-  const m = String(record.photo).match(/^data:([^;]+);base64,(.+)$/);
+  const p = String(record.photo);
+  if (p.startsWith('/uploads/')) {
+    const fp = path.join(UPLOAD_DIR, path.basename(p));
+    if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Rasm topilmadi' });
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    return res.sendFile(fp);
+  }
+  const m = p.match(/^data:([^;]+);base64,(.+)$/);
   if (!m) return res.status(404).json({ error: 'Noto\'g\'ri rasm formati' });
   const buf = Buffer.from(m[2], 'base64');
   res.setHeader('Content-Type', m[1]);
@@ -304,7 +334,11 @@ app.put('/api/subjects/:old', authRequired, adminOnly, (req, res) => {
     Array.isArray(t.subjects) ? { ...t, subjects: t.subjects.map((s) => (s === old ? name : s)) } : t
   );
   db.store.schedule = db.store.schedule.map((s) => (s.subject === old ? { ...s, subject: name } : s));
-  db.saveAll();
+  db.saveCollection('subjects');
+  db.saveCollection('grades');
+  db.saveCollection('tests');
+  db.saveCollection('teachers');
+  db.saveCollection('schedule');
   res.json({ ok: true, subjects: subs });
 });
 
@@ -428,7 +462,7 @@ app.post('/api/teacher/photo', authRequired, teacherOnly, upload.single('photo')
   const teacher = currentTeacher(req);
   if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
   if (!req.file) return res.status(400).json({ error: 'Rasm yuklanmadi' });
-  teacher.photo = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+  setPhoto(teacher, req.file.buffer, req.file.mimetype, 't' + teacher.id);
   db.saveCollection('teachers');
   res.json({ photo: teacher.photo });
 });
@@ -512,7 +546,13 @@ app.put('/api/teachers/:id', authRequired, adminOnly, (req, res) => {
   const b = req.body || {};
   if (b.fullName !== undefined) teacher.fullName = String(b.fullName).trim();
   if (b.position !== undefined) teacher.position = String(b.position || '').trim();
-  if (b.photo !== undefined) teacher.photo = b.photo || null;
+  if (b.photo !== undefined) {
+    // Faqat serverda saqlangan fayl yoki null — tashqi data URL qabul qilinmaydi
+    const v = b.photo ? String(b.photo) : null;
+    if (v && !v.startsWith('/uploads/')) return res.status(400).json({ error: 'Rasmni faqat fayl orqali o`zgartiring' });
+    if (v !== teacher.photo) removePhotoFile(teacher.photo);
+    teacher.photo = v;
+  }
   if (b.subjects !== undefined) teacher.subjects = (Array.isArray(b.subjects) ? b.subjects : []).map((s) => String(s).trim()).filter(Boolean);
   if (b.classes !== undefined) teacher.classes = (Array.isArray(b.classes) ? b.classes : []).map((s) => String(s).trim()).filter(Boolean);
   const user = db.store.users.find((u) => u.teacherId === teacher.id);
@@ -528,7 +568,10 @@ app.delete('/api/teachers/:id', authRequired, adminOnly, (req, res) => {
   db.store.users = db.store.users.filter((u) => !(u.role === 'teacher' && u.teacherId === id));
   db.store.tests = db.store.tests.filter((t) => t.teacherId !== id);
   db.store.teacher_attendance = db.store.teacher_attendance.filter((a) => a.teacherId !== id);
-  db.saveAll();
+  db.saveCollection('teachers');
+  db.saveCollection('users');
+  db.saveCollection('tests');
+  db.saveCollection('teacher_attendance');
   res.json({ ok: true });
 });
 
@@ -644,7 +687,12 @@ app.put('/api/doctors/:id', authRequired, adminOnly, (req, res) => {
   const b = req.body || {};
   if (b.fullName !== undefined) doctor.fullName = String(b.fullName).trim();
   if (b.position !== undefined) doctor.position = String(b.position || '').trim();
-  if (b.photo !== undefined) doctor.photo = b.photo || null;
+  if (b.photo !== undefined) {
+    const v = b.photo ? String(b.photo) : null;
+    if (v && !v.startsWith('/uploads/')) return res.status(400).json({ error: 'Rasmni faqat fayl orqali o`zgartiring' });
+    if (v !== doctor.photo) removePhotoFile(doctor.photo);
+    doctor.photo = v;
+  }
   const user = db.store.users.find((u) => u.doctorId === doctor.id);
   if (user) user.fullName = doctor.fullName;
   db.saveCollection('doctors');
@@ -656,7 +704,7 @@ app.post('/api/doctors/:id/photo', authRequired, adminOnly, upload.single('photo
   const doctor = db.store.doctors.find((d) => d.id === Number(req.params.id));
   if (!doctor) return res.status(404).json({ error: 'Shifokor topilmadi' });
   if (!req.file) return res.status(400).json({ error: 'Rasm yuklanmadi' });
-  doctor.photo = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+  setPhoto(doctor, req.file.buffer, req.file.mimetype, 'd' + doctor.id);
   db.saveCollection('doctors');
   res.json({ photo: doctor.photo });
 });
@@ -665,7 +713,8 @@ app.delete('/api/doctors/:id', authRequired, adminOnly, (req, res) => {
   const id = Number(req.params.id);
   db.store.doctors = db.store.doctors.filter((d) => d.id !== id);
   db.store.users = db.store.users.filter((u) => !(u.role === 'doctor' && u.doctorId === id));
-  db.saveAll();
+  db.saveCollection('doctors');
+  db.saveCollection('users');
   res.json({ ok: true });
 });
 
@@ -691,7 +740,7 @@ app.post('/api/doctor/photo', authRequired, doctorOnly, upload.single('photo'), 
   const doctor = db.store.doctors.find((d) => d.id === req.user.doctorId);
   if (!doctor) return res.status(404).json({ error: 'Shifokor topilmadi' });
   if (!req.file) return res.status(400).json({ error: 'Rasm yuklanmadi' });
-  doctor.photo = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+  setPhoto(doctor, req.file.buffer, req.file.mimetype, 'd' + doctor.id);
   db.saveCollection('doctors');
   res.json({ photo: doctor.photo });
 });
@@ -1091,6 +1140,7 @@ app.post('/api/students', authRequired, adminOnly, (req, res) => {
   };
 
   db.store.students.push(student);
+  invalidateStudentMap();
 
   // Ota-ona uchun login/parolni avtomatik yaratish
   let parentUsername = b.parentUsername ? String(b.parentUsername).trim().toLowerCase() : null;
@@ -1113,7 +1163,7 @@ app.post('/api/students', authRequired, adminOnly, (req, res) => {
   res.status(201).json({ ...student, parentUsername, parentPassword });
 });
 
-app.put('/api/students/:id', authRequired, adminOnly, (req, res) => {
+app.put('/api/students/:id', authRequired, adminOnly, async (req, res) => {
   const student = db.store.students.find((s) => s.id === Number(req.params.id));
   if (!student) return res.status(404).json({ error: 'O`quvchi topilmadi' });
   const b = req.body || {};
@@ -1126,7 +1176,9 @@ app.put('/api/students/:id', authRequired, adminOnly, (req, res) => {
   if (b.address !== undefined) student.address = String(b.address || '').trim();
   if (b.parentName !== undefined) student.parentName = String(b.parentName || '').trim();
   if (b.parentPhone !== undefined) student.parentPhone = String(b.parentPhone || '').trim();
+  invalidateStudentMap();
   db.saveCollection('students');
+  await db.flushWrites();
   res.json(student);
 });
 
@@ -1134,6 +1186,7 @@ app.delete('/api/students/:id', authRequired, adminOnly, (req, res) => {
   const id = Number(req.params.id);
   if (!db.store.students.some((s) => s.id === id)) return res.status(404).json({ error: 'O`quvchi topilmadi' });
   db.store.students = db.store.students.filter((s) => s.id !== id);
+  invalidateStudentMap();
   db.store.users = db.store.users.filter((u) => !(u.role === 'parent' && u.studentId === id));
   db.store.payments = db.store.payments.filter((p) => p.studentId !== id);
   db.store.attendance = db.store.attendance.filter((a) => a.studentId !== id);
@@ -1143,7 +1196,14 @@ app.delete('/api/students/:id', authRequired, adminOnly, (req, res) => {
   db.store.tests = db.store.tests.map((t) =>
     Array.isArray(t.results) ? { ...t, results: t.results.filter((r) => r.studentId !== id) } : t
   );
-  db.saveAll();
+  db.saveCollection('students');
+  db.saveCollection('users');
+  db.saveCollection('payments');
+  db.saveCollection('attendance');
+  db.saveCollection('grades');
+  db.saveCollection('medical');
+  db.saveCollection('healthchecks');
+  db.saveCollection('tests');
   res.json({ ok: true });
 });
 
@@ -1170,11 +1230,20 @@ app.delete('/api/classes/:name', authRequired, adminOnly, (req, res) => {
   if (!ids.length) return res.status(404).json({ error: 'Sinf topilmadi' });
 
   db.store.students = db.store.students.filter((s) => !ids.includes(s.id));
+  invalidateStudentMap();
   db.store.users = db.store.users.filter((u) => !(u.role === 'parent' && ids.includes(u.studentId)));
   db.store.payments = db.store.payments.filter((p) => !ids.includes(p.studentId));
   db.store.attendance = db.store.attendance.filter((a) => !ids.includes(a.studentId));
   db.store.grades = db.store.grades.filter((g) => !ids.includes(g.studentId));
-  db.saveAll();
+  db.saveCollection('students');
+  db.saveCollection('users');
+  db.saveCollection('payments');
+  db.saveCollection('attendance');
+  db.saveCollection('grades');
+  db.saveCollection('medical');
+  db.saveCollection('healthchecks');
+  db.saveCollection('tests');
+  db.saveCollection('schedule');
   res.json({ ok: true, removed: ids.length });
 });
 
@@ -1604,7 +1673,7 @@ app.post('/api/students/:id/photo', authRequired, adminOnly, upload.single('phot
   if (!student) return res.status(404).json({ error: 'O`quvchi topilmadi' });
   if (!req.file) return res.status(400).json({ error: 'Rasm yuklanmadi' });
 
-  student.photo = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+  setPhoto(student, req.file.buffer, req.file.mimetype, 's' + student.id);
   db.saveCollection('students');
   res.json({ photo: student.photo });
 });
@@ -1613,7 +1682,7 @@ app.post('/api/teachers/:id/photo', authRequired, adminOnly, upload.single('phot
   const teacher = db.store.teachers.find((t) => t.id === Number(req.params.id));
   if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
   if (!req.file) return res.status(400).json({ error: 'Rasm yuklanmadi' });
-  teacher.photo = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+  setPhoto(teacher, req.file.buffer, req.file.mimetype, 't' + teacher.id);
   db.saveCollection('teachers');
   res.json({ photo: teacher.photo });
 });
@@ -2057,7 +2126,7 @@ app.post('/api/parent/student/photo', authRequired, upload.single('photo'), (req
   const student = parentOf(req, res);
   if (!student) return;
   if (!req.file) return res.status(400).json({ error: 'Rasm yuklanmadi' });
-  student.photo = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+  setPhoto(student, req.file.buffer, req.file.mimetype, 's' + student.id);
   db.saveCollection('students');
   res.json({ photoUrl: '/api/students/' + student.id + '/photo' });
 });
@@ -2065,6 +2134,7 @@ app.post('/api/parent/student/photo', authRequired, upload.single('photo'), (req
 app.delete('/api/parent/student/photo', authRequired, (req, res) => {
   const student = parentOf(req, res);
   if (!student) return;
+  removePhotoFile(student.photo);
   student.photo = null;
   db.saveCollection('students');
   res.json({ ok: true });
@@ -2132,6 +2202,20 @@ function roleName(r) {
 }
 
 // Kimga yozish mumkin: rolga qarab kontaktlar
+// ---------- Chat kontaktlari (N+1 tuzatildi) ----------
+// Eski kod: har bir ota-ona uchun students ichidan .find() -> O(n*m).
+// Endi Map bir marta quriladi -> O(n).
+let _studentMapCache = null;
+function studentMap() {
+  if (!_studentMapCache) {
+    _studentMapCache = new Map(db.store.students.map((s) => [s.id, s]));
+  }
+  return _studentMapCache;
+}
+function invalidateStudentMap() {
+  _studentMapCache = null;
+}
+
 function chatContactsForUser(me) {
   const all = db.store.users;
   const contacts = [];
@@ -2144,11 +2228,13 @@ function chatContactsForUser(me) {
       otherIds.add(u.id);
     }
   } else if (me.role === 'parent') {
-    const st = db.store.students.find((s) => s.id === me.studentId);
+    const st = studentMap().get(me.studentId);
     if (st) {
-      const teacherUsers = all.filter((u) => u.role === 'teacher');
-      for (const tu of teacherUsers) {
-        const t = db.store.teachers.find((x) => x.id === tu.teacherId);
+      const teachers = db.store.teachers;
+      const tById = new Map(teachers.map((t) => [t.id, t]));
+      for (const tu of all) {
+        if (tu.role !== 'teacher') continue;
+        const t = tById.get(tu.teacherId);
         if (t && t.classes && t.classes.includes(st.className)) otherIds.add(tu.id);
       }
     }
@@ -2160,9 +2246,10 @@ function chatContactsForUser(me) {
     const t = db.store.teachers.find((x) => x.id === me.teacherId);
     if (t && t.classes) {
       const classes = t.classes;
-      const parents = all.filter((u) => u.role === 'parent' && u.studentId);
-      for (const pu of parents) {
-        const st = db.store.students.find((s) => s.id === pu.studentId);
+      const sm = studentMap();
+      for (const pu of all) {
+        if (pu.role !== 'parent' || !pu.studentId) continue;
+        const st = sm.get(pu.studentId);
         if (st && classes.includes(st.className)) otherIds.add(pu.id);
       }
     }
@@ -2327,6 +2414,47 @@ app.get('/api/chat/unread', authRequired, (req, res) => {
   if (!me) return res.status(404).json({ error: 'Foydalanuvchi topilmadi' });
   const count = db.store.messages.filter((m) => m.to === me.id && !m.read).length;
   res.json({ count });
+});
+
+// ---------- Jarayon to'xtatilishini boshqarish ----------
+// DB yozuvlari navbatda (writeQueue) bajariladi. Jarayon to'xtatilganda
+// ularni kutib tamomlaymiz — aks holda oxirgi o'zgarishlar yo'qoladi.
+let _shuttingDown = false;
+async function gracefulExit(signal) {
+  if (_shuttingDown) return;
+  _shuttingDown = true;
+  console.log(`${signal} qabul qilindi — navbatdagi yozuvlar tugaydi...`);
+  try {
+    await db.flushWrites();
+    console.log('Barcha yozuvlar saqlandi.');
+  } catch (e) {
+    console.error('Yozuvni saqlashda xato:', e.message);
+  }
+  process.exit(0);
+}
+process.on('SIGINT', () => gracefulExit('SIGINT'));
+process.on('SIGTERM', () => gracefulExit('SIGTERM'));
+process.on('uncaughtException', (e) => {
+  console.error('Kutilmagan xato:', e && e.stack ? e.stack : e);
+  gracefulExit('uncaughtException');
+});
+process.on('unhandledRejection', (e) => {
+  console.error('Tuzilmagan so\'rov rad etildi:', e && e.message ? e.message : e);
+});
+
+// ---------- 404 va xato ishlovchisi ----------
+// API uchun JSON, boshqa uchun oddiy matn.
+app.use((req, res) => {
+  if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Topilmadi' });
+  res.status(404).send('404');
+});
+
+// Express 5 async xatolarni avtomatik shu yerga yuboradi.
+app.use((err, req, res, next) => {
+  console.error('Xato:', err && err.message ? err.message : err);
+  if (res.headersSent) return next(err);
+  if (req.path.startsWith('/api/')) return res.status(500).json({ error: 'Server xatosi' });
+  res.status(500).send('Server xatosi');
 });
 
 db.loadAll()
