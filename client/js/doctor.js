@@ -83,6 +83,7 @@
       }
       document.querySelectorAll('.nav-item[data-section]').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
+      scrollNavIntoView(btn);
       navigate(btn.dataset.section);
     });
   });

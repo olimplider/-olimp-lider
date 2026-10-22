@@ -37,6 +37,7 @@
       }
       document.querySelectorAll('.nav-item[data-section]').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
+      scrollNavIntoView(btn);
       section = btn.dataset.section;
       pageTitle.textContent = TITLES[section];
       render();

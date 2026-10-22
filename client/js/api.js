@@ -121,6 +121,20 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Mobil'da pastki menyu gorizontal scroll qilinadi.
+// Aktiv bo'lim ekran chetida qolmasligi uchun avtomatik suriladi.
+function scrollNavIntoView(el) {
+  if (!el) return;
+  const nav = el.closest('.nav');
+  if (!nav) return;
+  const navBox = nav.getBoundingClientRect();
+  const itemBox = el.getBoundingClientRect();
+  if (itemBox.left >= navBox.left && itemBox.right <= navBox.right) return;
+  const target = nav.scrollLeft + (itemBox.left - navBox.left) - (navBox.width - itemBox.width) / 2;
+  try { nav.scrollTo({ left: Math.max(0, target), behavior: 'smooth' }); } catch (e) { nav.scrollLeft = Math.max(0, target); }
+}
+window.scrollNavIntoView = scrollNavIntoView;
+
 function avatarHtml(student) {
   const initials = ((student.lastName || '') + (student.firstName || '')).slice(0, 2).toUpperCase();
   const src = student.photoUrl || student.photo;

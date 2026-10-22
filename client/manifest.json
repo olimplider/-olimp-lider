@@ -1,0 +1,43 @@
+{
+  "name": "OLIMP-LIDER",
+  "short_name": "OLIMP",
+  "description": "Maktab boshqaruv tizimi - O'quvchilar, to'lovlar, davomat, baholar",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0d0a",
+  "theme_color": "#0e130e",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "uz",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/assets/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/assets/logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dars jadvali",
+      "short_name": "Jadval",
+      "description": "Dars jadvalini ko'rish",
+      "url": "/schedule",
+      "icons": [{ "src": "/assets/logo.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "To'lovlar",
+      "short_name": "To'lovlar",
+      "description": "To'lov holatini ko'rish",
+      "url": "/payments",
+      "icons": [{ "src": "/assets/logo.png", "sizes": "192x192" }]
+    }
+  ]
+}

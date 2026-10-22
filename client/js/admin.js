@@ -234,9 +234,10 @@
         window.CHAT.open();
         return;
       }
-      document.querySelectorAll('.nav-item[data-section]').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      navigateTo(btn.dataset.section);
+    document.querySelectorAll('.nav-item[data-section]').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    scrollNavIntoView(btn);
+    navigateTo(btn.dataset.section);
     });
   });
 
@@ -289,6 +290,7 @@
     document.querySelectorAll('.nav-item[data-section]').forEach((b) => b.classList.remove('active'));
     const nav = document.querySelector('.nav-item[data-section="' + sec + '"]');
     if (nav) nav.classList.add('active');
+    scrollNavIntoView(nav);
     await navigateTo(sec);
   };
 
@@ -673,11 +675,13 @@
     students = await loadStudents(true);
     const classes = classOptions();
     if (fState.payments.cls && !classes.includes(fState.payments.cls)) fState.payments.cls = '';
-    topbarActions.innerHTML = `
+topbarActions.innerHTML = `
       <div class="toolbar">
+        <button class="btn btn-ghost btn-sm" onclick="window.appSidebarToggle()" aria-label="Menyuni ochish" style="width:38px;height:38px;padding:0;display:flex;align-items:center;justify-content:center;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
         <select id="payMonthSel">${renderMonthsSelect(payMonth)}</select>
         <select id="payYearSel">${renderYearsSelect()}</select>
-        <button class="btn btn-outline btn-sm" onclick="window.appPayRemind()">📢 Telegram eslatma</button>
       </div>`;
 
     document.getElementById('payMonthSel').addEventListener('change', (e) => { payMonth = Number(e.target.value); renderPayTable(); });
@@ -1203,7 +1207,9 @@
   async function openClass(name) {
     classFilter = name;
     document.querySelectorAll('.nav-item[data-section]').forEach((b) => b.classList.remove('active'));
-    document.querySelector('[data-section="students"]').classList.add('active');
+    const stNav = document.querySelector('[data-section="students"]');
+    stNav.classList.add('active');
+    scrollNavIntoView(stNav);
     navigateTo('students');
   }
 
@@ -2207,13 +2213,83 @@ initContact('contactTop');
       toast(e.message, 'error');
     }
   };
-  window.appCopyPc = (id) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    navigator.clipboard.writeText(el.value || el.textContent.trim()).then(() => toast('Nusxalandi'));
-  };
+window.appCopyPc = (id) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  navigator.clipboard.writeText(el.value || el.textContent.trim()).then(() => toast('Nusxalandi'));
+};
 
-  let _setAttInProgress = false;
+window.appSidebarToggle = () => {
+  const sidebar = document.querySelector('.sidebar');
+  if (sidebar) sidebar.classList.toggle('open');
+};
+
+window.appSidebarClose = () => {
+  const sidebar = document.querySelector('.sidebar');
+  if (sidebar) sidebar.classList.remove('open');
+};
+
+// Swipe gesture for sidebar on mobile
+let _swipeStartX = 0;
+let _swipeStartTime = 0;
+
+function initSidebarSwipe() {
+  const sidebar = document.querySelector('.sidebar');
+  if (!sidebar) return;
+
+  let startX = 0;
+  let startTime = 0;
+
+  document.addEventListener('touchstart', (e) => {
+    if (window.innerWidth > 900) return;
+    const sidebar = document.querySelector('.sidebar');
+    if (!sidebar) return;
+    
+    const touch = e.touches[0];
+    startX = touch.clientX;
+    startTime = Date.now();
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (window.innerWidth > 900) return;
+    const sidebar = document.querySelector('.sidebar');
+    if (!sidebar || !sidebar.classList.contains('open')) return;
+    
+    const touch = e.touches[0];
+    const deltaX = touch.clientX - startX;
+    
+    // Swipe left to close (negative deltaX)
+    if (deltaX < -50 && Date.now() - startTime < 300) {
+      window.appSidebarClose();
+    }
+    // Swipe right from left edge to open
+    if (deltaX > 50 && Date.now() - startTime < 300 && !document.querySelector('.sidebar.open')) {
+      window.appSidebarToggle();
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchend', (e) => {
+    if (window.innerWidth > 900) return;
+    const sidebar = document.querySelector('.sidebar');
+    if (!sidebar) return;
+    
+    const touch = e.changedTouches[0];
+    const deltaX = touch.clientX - startX;
+    const deltaTime = Date.now() - startTime;
+    
+    // Swipe left to close (swipe from right to left)
+    if (deltaX < -80 && deltaTime < 300) {
+      window.appSidebarClose();
+    }
+    // Swipe right from left edge to open
+    if (deltaX > 80 && Date.now() - startTime < 300 && !document.querySelector('.sidebar.open')) {
+      window.appSidebarToggle();
+    }
+  }, { passive: true });
+}
+
+// Initialize swipe on load
+document.addEventListener('DOMContentLoaded', initSidebarSwipe);
 
   // start
 initContact('contactLinks');
