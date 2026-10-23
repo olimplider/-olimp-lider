@@ -157,6 +157,8 @@
         API.setToken(data.token);
         localStorage.setItem('role', data.role);
         localStorage.setItem('fullName', data.fullName || '');
+        localStorage.setItem('branch_id', data.branch_id || '');
+        localStorage.setItem('branch_name', data.branch_name || '');
         window.location.href = data.redirect || LOGIN_URL;
       } catch (err) {
         errorBox.textContent = err.message;

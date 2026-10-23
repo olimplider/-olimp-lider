@@ -24,6 +24,14 @@ const API = {
     return localStorage.getItem('fullName') || '';
   },
 
+  getBranchId() {
+    return localStorage.getItem('branch_id') || '';
+  },
+
+  getBranchName() {
+    return localStorage.getItem('branch_name') || '';
+  },
+
   async request(url, options = {}) {
     const headers = { ...(options.headers || {}) };
     const token = this.getToken();
