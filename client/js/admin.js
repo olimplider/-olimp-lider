@@ -1445,7 +1445,7 @@ initContact('contactTop');
                       <td>${b.student_count}</td>
                       <td>${b.teacher_count}</td>
                       <td>${b.doctor_count}</td>
-                      <td><span class="badge badge-${b.is_active ? 'success' : 'danger'}">${b.is_active ? 'Faol' : 'No'faol'}</span></td>
+                      <td><span class="badge badge-${b.is_active ? 'success' : 'danger'}">${b.is_active ? 'Faol' : "No'faol"}</span></td>
                       <td>
                         <button class="btn btn-sm btn-outline" onclick="window.appEditBranch(${b.id})">Tahrirlash</button>
                         ${b.student_count === 0 && b.teacher_count === 0 && b.doctor_count === 0 ? `<button class="btn btn-sm btn-outline" style="color:var(--danger)" onclick="window.appDeleteBranch(${b.id})">O'chirish</button>` : '<span class="muted">—</span>'}
@@ -1547,7 +1547,7 @@ initContact('contactTop');
   };
 
   window.appDeleteBranch = async (id) => {
-    if (!confirm('Filialni o'chirishingizga ishonchingiz komilmi?')) return;
+    if (!confirm("Filialni o'chirishingizga ishonchingiz komilmi?")) return;
     try {
       await API.del('/api/branches/' + id);
       toast('Filial o\'chirildi');
