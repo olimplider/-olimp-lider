@@ -612,7 +612,7 @@
     showModal(`
       <div class="modal-header"><h3>Ota-ona kirishi — ${escapeHtml(s.firstName)} ${escapeHtml(s.lastName)}</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
       <div class="modal-body">
-        <div class="hint">Bu oynada ota-ona logini ko'rinadi. Parol xavfsizlik uchun yashiringan — "Yangi parol yaratish" tugmasini bossangiz, yangi parol yaratiladi va shu yerda ko'rsatiladi. Uni ota-onaga bering.</div>
+        <div class="hint">Bu oynada ota-ona logini va paroli ko'rinadi. "Yangi parol yaratish" tugmasini bossangiz, parol yangilanadi.</div>
         <div style="background:var(--card-2);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:14px">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
             <div><div class="muted">Ota-ona logini (o'zgartirish mumkin)</div>
@@ -624,7 +624,7 @@
         <div style="background:var(--success-light);border:1px solid var(--success);border-radius:12px;padding:16px 18px">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
             <div><div class="muted">Parol</div>
-              <div style="font-size:16px;font-weight:700;letter-spacing:.5px" id="pcPass">— (yashiringan)</div>
+              <div style="font-size:16px;font-weight:700;letter-spacing:.5px" id="pcPass">yuklanmoqda...</div>
             </div>
             <button class="btn btn-sm btn-outline" onclick="window.appCopyPc('pcPass')">Nusxalash</button>
           </div>
@@ -640,8 +640,10 @@
 
     if (result) {
       document.getElementById('pcUser').value = result.parentUsername;
+      document.getElementById('pcPass').textContent = result.parentPassword || '—';
     } else {
       document.getElementById('pcUser').value = '';
+      document.getElementById('pcPass').textContent = '—';
       const h = document.querySelector('.modal .hint');
       if (h) h.textContent = 'Bu o\'quvchi uchun ota-ona kirishi hali yo\'q. "Yangi parol yaratish" tugmasi orqali yarating: login ham avtomatik tayyorlanadi.';
     }

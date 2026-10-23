@@ -9,6 +9,7 @@ const compression = require('compression');
 const db = require('./db');
 const secretPages = require('./secret-pages');
 const telegram = require('./telegram');
+const secrets = require('./secrets');
 
 // ---------- .env.local yuklash (dotenv o'rniga, minimal) ----------
 // TELEGRAM_BOT_TOKEN kabi maxfiy qiymatlar shu yerda, git'ga tushmaydi.
@@ -206,6 +207,29 @@ function makePassword(len) {
   for (let i = 0; i < len; i++) p += chars[Math.floor(Math.random() * chars.length)];
   return p;
 }
+
+// Parolni ikki ko'rinishda saqlash: bcrypt (kirish) + shifrlangan (ko'rsatish)
+function setUserPassword(user, plainPassword) {
+  user.passwordHash = db.hashPassword(plainPassword);
+  user.pwEnc = secrets.encrypt(plainPassword);
+}
+
+// Foydalanuvchining saqlangan parolini olish (bo'lsa)
+function userPassword(user) {
+  if (!user) return '';
+  if (user.pwEnc) return secrets.decrypt(user.pwEnc);
+  return '';
+}
+
+// Parol saqlanmagan foydalanuvchiga bir marta parol berish (keyin barqaror)
+function ensureUserPassword(user) {
+  const existing = userPassword(user);
+  if (existing) return existing;
+  const pw = makePassword(8);
+  setUserPassword(user, pw);
+  return pw;
+}
+
 
 function authRequired(req, res, next) {
   const header = req.headers.authorization || '';
@@ -491,6 +515,7 @@ app.post('/api/teachers', authRequired, adminOnly, (req, res) => {
     id: db.nextId('users'),
     username,
     passwordHash: db.hashPassword(password),
+    pwEnc: secrets.encrypt(password),
     role: 'teacher',
     fullName,
     teacherId: teacher.id,
@@ -531,13 +556,22 @@ app.post('/api/teachers/:id/credentials', authRequired, adminOnly, (req, res) =>
 
   if (b.password) {
     if (String(b.password).length < 4) return res.status(400).json({ error: 'Parol kamida 4 ta belgi' });
-    user.passwordHash = db.hashPassword(String(b.password));
+    setUserPassword(user, String(b.password));
   } else {
-    user.passwordHash = db.hashPassword(makePassword(8));
+    setUserPassword(user, makePassword(8));
   }
 
   db.saveCollection('users');
-  res.json({ username: user.username, password: b.password ? String(b.password) : undefined, fresh: !b.password });
+  res.json({ username: user.username, password: b.password ? String(b.password) : userPassword(user), fresh: !b.password });
+});
+
+// O'qituvchi login/parolini KO'RISH (parol o'zgartirilmaydi)
+app.get('/api/teachers/:id/credentials', authRequired, adminOnly, (req, res) => {
+  const teacher = db.store.teachers.find((t) => t.id === Number(req.params.id));
+  if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+  const user = db.store.users.find((u) => u.role === 'teacher' && u.teacherId === teacher.id);
+  if (!user) return res.status(404).json({ error: 'Kirish yozuvi topilmadi' });
+  res.json({ username: user.username, password: userPassword(user) });
 });
 
 app.put('/api/teachers/:id', authRequired, adminOnly, (req, res) => {
@@ -626,10 +660,11 @@ app.post('/api/doctors', authRequired, adminOnly, (req, res) => {
   username = ensureUniqueUsername(username || makeUsername('shifokor', String(doctor.id)));
   const password = b.password && String(b.password).length >= 4 ? String(b.password) : makePassword(8);
 
-  const user = {
+const user = {
     id: db.nextId('users'),
     username,
     passwordHash: db.hashPassword(password),
+    pwEnc: secrets.encrypt(password),
     role: 'doctor',
     fullName,
     doctorId: doctor.id,
@@ -669,16 +704,25 @@ app.post('/api/doctors/:id/credentials', authRequired, adminOnly, (req, res) => 
     user.username = uname;
   }
 
-  if (b.password) {
+if (b.password) {
     if (String(b.password).length < 4) return res.status(400).json({ error: 'Parol kamida 4 ta belgi' });
-    user.passwordHash = db.hashPassword(String(b.password));
+    setUserPassword(user, String(b.password));
   } else {
-    user.passwordHash = db.hashPassword(makePassword(8));
+    setUserPassword(user, makePassword(8));
   }
   if (user.fullName !== doctor.fullName) user.fullName = doctor.fullName;
 
   db.saveCollection('users');
-  res.json({ username: user.username, password: b.password ? String(b.password) : undefined, fresh: !b.password });
+  res.json({ username: user.username, password: b.password ? String(b.password) : userPassword(user), fresh: !b.password });
+});
+
+// Shifokor login/parolini KO'RISH (parol o'zgartirilmaydi)
+app.get('/api/doctors/:id/credentials', authRequired, adminOnly, (req, res) => {
+  const doctor = db.store.doctors.find((d) => d.id === Number(req.params.id));
+  if (!doctor) return res.status(404).json({ error: 'Shifokor topilmadi' });
+  const user = db.store.users.find((u) => u.role === 'doctor' && u.doctorId === doctor.id);
+  if (!user) return res.status(404).json({ error: 'Kirish yozuvi topilmadi' });
+  res.json({ username: user.username, password: userPassword(user) });
 });
 
 app.put('/api/doctors/:id', authRequired, adminOnly, (req, res) => {
@@ -1149,10 +1193,11 @@ app.post('/api/students', authRequired, adminOnly, (req, res) => {
   if (!parentPassword || String(parentPassword).length < 4) parentPassword = makePassword(8);
   parentUsername = ensureUniqueUsername(parentUsername);
 
-  db.store.users.push({
+db.store.users.push({
     id: db.nextId('users'),
     username: parentUsername,
     passwordHash: db.hashPassword(parentPassword),
+    pwEnc: secrets.encrypt(parentPassword),
     role: 'parent',
     fullName: student.parentName || `${student.firstName} ning ota-onasi`,
     studentId: student.id,
@@ -1361,14 +1406,14 @@ app.get('/api/export/parents', authRequired, adminOnly, async (req, res) => {
   const students = db.store.students
     .filter((s) => (s.className || '(sinsiz)') === className)
     .sort((a, b) => a.lastName.localeCompare(b.lastName));
-  const rows = students.map((s) => {
+const rows = students.map((s) => {
     let u = db.store.users.find((x) => x.role === 'parent' && x.studentId === s.id);
     if (!u) {
       u = { id: db.nextId('users'), username: ensureUniqueUsername(makeUsername(s.lastName, s.firstName)), passwordHash: null, role: 'parent', fullName: s.parentName || (s.firstName + ' ning ota-onasi'), studentId: s.id };
       db.store.users.push(u);
     }
-    const pw = makePassword(8);
-    u.passwordHash = db.hashPassword(pw);
+    // Parolni qayta yaratmaslik: mavjud bo'lsa o'shasini, yo'q bo'lsa yaratish
+    const pw = ensureUserPassword(u);
     return { fio: (s.lastName + ' ' + s.firstName + ' ' + (s.patronymic || '')).trim(), parent: s.parentName || '-', login: u.username, pw };
   });
   db.saveCollection('users');
@@ -1822,7 +1867,7 @@ app.post('/api/telegram/unlink', authRequired, adminOnly, (req, res) => {
 app.get('/api/students/:id/parent-credentials', authRequired, adminOnly, (req, res) => {
   const user = db.store.users.find((u) => u.role === 'parent' && u.studentId === Number(req.params.id));
   if (!user) return res.status(404).json({ error: 'Ota-ona kirish yozuvi topilmadi' });
-  res.json({ parentUsername: user.username });
+  res.json({ parentUsername: user.username, parentPassword: userPassword(user) });
 });
 
 app.post('/api/students/:id/parent-credentials', authRequired, adminOnly, (req, res) => {
@@ -1842,7 +1887,7 @@ app.post('/api/students/:id/parent-credentials', authRequired, adminOnly, (req, 
     db.store.users.push(user);
   }
 
-  const b = req.body || {};
+const b = req.body || {};
   if (b.username && String(b.username).trim()) {
     const uname = String(b.username).trim().toLowerCase();
     const taken = db.store.users.find((u) => u.username === uname && u.id !== user.id);
@@ -1850,12 +1895,9 @@ app.post('/api/students/:id/parent-credentials', authRequired, adminOnly, (req, 
     user.username = uname;
   }
 
-  const newPassword = makePassword(8);
-  user.passwordHash = db.hashPassword(newPassword);
-  user.fullName = student.parentName || `${student.firstName} ning ota-onasi`;
-
+  const pw = ensureUserPassword(user);
   db.saveCollection('users');
-  res.json({ parentUsername: user.username, parentPassword: newPassword });
+  res.json({ parentUsername: user.username, parentPassword: userPassword(user) });
 });
 
 // ---------- Oylik to'lovlar ----------
