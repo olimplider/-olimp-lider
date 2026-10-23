@@ -182,7 +182,7 @@ const upload = multer({
 
 function signToken(user) {
   return jwt.sign(
-    { id: user.id, username: user.username, role: user.role, studentId: user.studentId || null, teacherId: user.teacherId || null, doctorId: user.doctorId || null },
+    { id: user.id, username: user.username, role: user.role, studentId: user.studentId || null, teacherId: user.teacherId || null, doctorId: user.doctorId || null, branch_id: user.branch_id || null },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -262,7 +262,7 @@ function authRequired(req, res, next) {
 }
 
 function adminOnly(req, res, next) {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Ruxsat yo`q' });
+  if (req.user.role !== 'admin' && req.user.role !== 'super_admin' && req.user.role !== 'branch_admin') return res.status(403).json({ error: 'Ruxsat yo`q' });
   next();
 }
 
