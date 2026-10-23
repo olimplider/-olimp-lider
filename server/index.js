@@ -565,13 +565,15 @@ app.post('/api/teachers/:id/credentials', authRequired, adminOnly, (req, res) =>
   res.json({ username: user.username, password: b.password ? String(b.password) : userPassword(user), fresh: !b.password });
 });
 
-// O'qituvchi login/parolini KO'RISH (parol o'zgartirilmaydi)
+// O'qituvchi login/parolini KO'RISH
 app.get('/api/teachers/:id/credentials', authRequired, adminOnly, (req, res) => {
   const teacher = db.store.teachers.find((t) => t.id === Number(req.params.id));
   if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
   const user = db.store.users.find((u) => u.role === 'teacher' && u.teacherId === teacher.id);
   if (!user) return res.status(404).json({ error: 'Kirish yozuvi topilmadi' });
-  res.json({ username: user.username, password: userPassword(user) });
+  const pw = ensureUserPassword(user);
+  db.saveCollection('users');
+  res.json({ username: user.username, password: pw });
 });
 
 app.put('/api/teachers/:id', authRequired, adminOnly, (req, res) => {
@@ -716,13 +718,15 @@ if (b.password) {
   res.json({ username: user.username, password: b.password ? String(b.password) : userPassword(user), fresh: !b.password });
 });
 
-// Shifokor login/parolini KO'RISH (parol o'zgartirilmaydi)
+// Shifokor login/parolini KO'RISH
 app.get('/api/doctors/:id/credentials', authRequired, adminOnly, (req, res) => {
   const doctor = db.store.doctors.find((d) => d.id === Number(req.params.id));
   if (!doctor) return res.status(404).json({ error: 'Shifokor topilmadi' });
   const user = db.store.users.find((u) => u.role === 'doctor' && u.doctorId === doctor.id);
   if (!user) return res.status(404).json({ error: 'Kirish yozuvi topilmadi' });
-  res.json({ username: user.username, password: userPassword(user) });
+  const pw = ensureUserPassword(user);
+  db.saveCollection('users');
+  res.json({ username: user.username, password: pw });
 });
 
 app.put('/api/doctors/:id', authRequired, adminOnly, (req, res) => {
@@ -1867,7 +1871,9 @@ app.post('/api/telegram/unlink', authRequired, adminOnly, (req, res) => {
 app.get('/api/students/:id/parent-credentials', authRequired, adminOnly, (req, res) => {
   const user = db.store.users.find((u) => u.role === 'parent' && u.studentId === Number(req.params.id));
   if (!user) return res.status(404).json({ error: 'Ota-ona kirish yozuvi topilmadi' });
-  res.json({ parentUsername: user.username, parentPassword: userPassword(user) });
+  const pw = ensureUserPassword(user);
+  db.saveCollection('users');
+  res.json({ parentUsername: user.username, parentPassword: pw });
 });
 
 app.post('/api/students/:id/parent-credentials', authRequired, adminOnly, (req, res) => {

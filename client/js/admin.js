@@ -1539,20 +1539,22 @@ initContact('contactTop');
   }
 
   async function teacherCred(id) {
-    const teachers = await API.get('/api/teachers');
-    const t = teachers.find((x) => x.id === id);
-    if (!t) return;
+    const cred = await API.get('/api/teachers/' + id + '/credentials').catch(() => null);
     showModal(`
       <div class="modal-title">Kirish ma'lumotlari</div>
-      <div class="form-group"><label>Login</label><div style="display:flex;gap:8px"><code id="tcU" style="flex:1">${escapeHtml(t.username || '')}</code><button class="btn btn-ghost btn-sm" onclick="window.appCopyTxt('tcU')">Nusxa</button></div></div>
-      <div class="form-group"><label>Parol</label><div class="hint">Eski parolni ko'rish mumkin emas. "Yangi parol" tugmasi yangisini yaratib ko'rsatadi.</div></div>
+      ${cred ? `
+      <div class="cred-card">
+        <div class="cred-row"><span>Login</span><div><code id="tcU">${escapeHtml(cred.username)}</code><button class="btn btn-ghost btn-sm" onclick="window.appCopyTxt('tcU')">Nusxa</button></div></div>
+        <div class="cred-row"><span>Parol</span><div><code id="tcP">${escapeHtml(cred.password || '—')}</code><button class="btn btn-ghost btn-sm" onclick="window.appCopyTxt('tcP')">Nusxa</button></div></div>
+      </div>` : `
+      <div class="hint">Bu o'qituvchi uchun kirish yozuvi hali yaratilmagan.</div>`}
       <div class="modal-actions">
-        <button class="btn btn-outline" onclick="window.appCloseModal()">Bekor</button>
+        <button class="btn btn-outline" onclick="window.appCloseModal()">Yopish</button>
         <button class="btn btn-primary" id="tcRegen">Yangi parol yaratish</button>
       </div>`);
     document.getElementById('tcRegen').addEventListener('click', async () => {
       try {
-        const r = await API.post('/api/teachers/' + t.id + '/credentials', {});
+        const r = await API.post('/api/teachers/' + id + '/credentials', {});
         showModal(`
           <div class="modal-title">Yangi parol tayyor</div>
           <div class="cred-card">
@@ -1694,15 +1696,17 @@ initContact('contactTop');
   }
 
   async function doctorCred(id) {
-    const doctors = await API.get('/api/doctors');
-    const d = doctors.find((x) => x.id === id);
-    if (!d) return;
+    const cred = await API.get('/api/doctors/' + id + '/credentials').catch(() => null);
     showModal(`
       <div class="modal-title">Kirish ma'lumotlari</div>
-      <div class="form-group"><label>Login</label><div style="display:flex;gap:8px"><code id="dcU" style="flex:1">${escapeHtml(d.username || '')}</code><button class="btn btn-ghost btn-sm" onclick="window.appCopyTxt('dcU')">Nusxa</button></div></div>
-      <div class="form-group"><label>Parol</label><div class="hint">Eski parolni ko'rish mumkin emas. "Yangi parol" tugmasi yangisini yaratib ko'rsatadi.</div></div>
+      ${cred ? `
+      <div class="cred-card">
+        <div class="cred-row"><span>Login</span><div><code id="dcU">${escapeHtml(cred.username)}</code><button class="btn btn-ghost btn-sm" onclick="window.appCopyTxt('dcU')">Nusxa</button></div></div>
+        <div class="cred-row"><span>Parol</span><div><code id="dcP">${escapeHtml(cred.password || '—')}</code><button class="btn btn-ghost btn-sm" onclick="window.appCopyTxt('dcP')">Nusxa</button></div></div>
+      </div>` : `
+      <div class="hint">Bu shifokor uchun kirish yozuvi hali yaratilmagan.</div>`}
       <div class="modal-actions">
-        <button class="btn btn-outline" onclick="window.appCloseModal()">Bekor</button>
+        <button class="btn btn-outline" onclick="window.appCloseModal()">Yopish</button>
         <button class="btn btn-primary" id="dcRegen">Yangi parol yaratish</button>
       </div>`);
     document.getElementById('dcRegen').addEventListener('click', async () => {
