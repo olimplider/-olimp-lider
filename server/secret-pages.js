@@ -12,6 +12,7 @@ const SECRET_PAGES = {
   '.h4kcw2?p9dtx': 'teacher.html',
   '.j7rfn3?w2vyb': 'parent.html',
   '.q5slmz?c8gtd': 'doctor.html',
+  '.x9v2m7?k4nz1': 'branch-admin.html',
 };
 
 // Rol -> kalit (login javobida redirect uchun)
@@ -20,6 +21,7 @@ const ROLE_KEYS = {
   teacher: '.h4kcw2?p9dtx',
   parent: '.j7rfn3?w2vyb',
   doctor: '.q5slmz?c8gtd',
+  branch_admin: '.x9v2m7?k4nz1',
 };
 
 const LOGIN_KEY = '.k7m2q9?x4p8r';

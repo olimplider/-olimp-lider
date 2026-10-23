@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0e130e">
+  <title id="pageTitle">OLIMP-LIDER — Filial paneli</title>
+  <link rel="icon" type="image/png" href="/assets/logo.png">
+  <link rel="apple-touch-icon" href="/assets/logo.png">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="OLIMP-LIDER">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    /* Critical CSS - inline to prevent FOUC */
+    :root {
+      --bg: #0a0d0a;
+      --bg-grad: linear-gradient(135deg, #0a0d0a 0%, #0f172a 45%, #0a0d0a 100%);
+      --card: rgba(255, 255, 255, 0.06);
+      --card-2: rgba(255, 255, 255, 0.04);
+      --card-3: rgba(255, 255, 255, 0.03);
+      --card-4: rgba(255, 255, 255, 0.02);
+      --ink: #f1f5f9;
+      --ink-2: #cbd5e1;
+      --muted: #94a3b8;
+      --muted-2: #767e68;
+      --gold: #d4af37;
+      --gold-dim: #b8922e;
+      --gold-soft: rgba(212, 175, 55, 0.16);
+      --gold-soft-2: rgba(212, 175, 55, 0.06);
+      --gold-grad: linear-gradient(135deg, #e8cc6e, #d4af37 55%, #ae8c26);
+      --green: #58a946;
+      --red: #c0392b;
+      --blue: #3f6b8f;
+      --crimson: #d84c4c;
+      --code: #0b0e09;
+      --text: #f1f5f9;
+      --border: rgba(212, 175, 55, 0.35);
+      --border-soft: rgba(212, 175, 55, 0.10);
+      --line: #2c3424;
+      --line-soft: rgba(212, 175, 55, 0.10);
+      --radius-sm: 8px;
+      --radius: 14px;
+      --radius-lg: 20px;
+      --radius-xl: 28px;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 16px 34px -14px rgba(0, 0, 0, 0.65);
+      --shadow-lg: 0 2px 4px rgba(0, 0, 0, 0.5), 0 34px 70px -20px rgba(0, 0, 0, 0.8);
+      --ring: 0 0 0 3px rgba(212, 175, 55, 0.35);
+      --ring-danger: 0 0 0 3px rgba(192, 57, 43, 0.3);
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
+      --acc: #d4af37;
+      --acc-deep: #9a7b22;
+      --acc-2: #e8cc6e;
+      --gold-2: #e8cc6e;
+      --gold-soft-b: rgba(212, 175, 55, 0.18);
+      --acc-soft: rgba(212, 175, 55, 0.14);
+      --green-soft: rgba(88, 169, 70, 0.16);
+      --red-soft: rgba(192, 57, 43, 0.16);
+      --blue-soft: rgba(63, 107, 143, 0.24);
+      --amber-soft: rgba(255, 190, 70, 0.15);
+      --purple-soft: rgba(146, 110, 196, 0.2);
+      --bg-grad-a: rgba(212, 175, 55, 0.06);
+      --bg-grad-b: rgba(46, 62, 34, 0.12);
+      --bg-grad-c: rgba(5, 7, 10, 0.82);
+      --card-gradient: linear-gradient(165deg, rgba(255, 255, 255, 0.06), rgba(16, 21, 14, 0.82));
+      --card-velvet: rgba(16, 21, 14, 0.82);
+      --backdrop: rgba(4, 6, 4, 0.62);
+      --blur: blur(12px) saturate(100%);
+      --border-ok: #d4af37;
+      --success: #58a946;
+      --success-light: rgba(88, 169, 70, 0.16);
+      --danger: #c0392b;
+      --text-muted: #9aa488;
+    }
+    html { background-color: var(--bg); }
+    body { background: var(--bg-grad); color: var(--ink); margin: 0; }
+    * { touch-action: manipulation; }
+    :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <img src="/assets/logo.png" class="brand-logo" alt="logotip">
+        <div>
+          <h2 id="branchPanelTitle">OLIMP-LIDER</h2>
+          <span id="branchPanelSubtitle">Filial paneli</span>
+        </div>
+      </div>
+      <nav class="nav" id="nav">
+        <button class="nav-item active" data-section="dashboard"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span class="text">Dashbord</span></button>
+        <button class="nav-item" data-section="students"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="text">O'quvchilar</span></button>
+        <button class="nav-item" data-section="payments"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg><span class="text">Oylik to'lovlar</span></button>
+        <button class="nav-item" data-section="classes"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="16" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M22 11v5"/></svg><span class="text">Sinflar</span></button>
+        <button class="nav-item" data-section="schedule"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h3v3H8z"/><path d="M13 14h3v3h-3z"/></svg><span class="text">Dars jadvali</span></button>
+        <button class="nav-item" data-section="attendance"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="m9 16 2 2 4-4"/></svg><span class="text">Davomat</span></button>
+        <button class="nav-item" data-section="grades"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7"/><path d="M9 11h5"/></svg><span class="text">Baholar</span></button>
+        <button class="nav-item" data-section="teachers"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="text">O'qituvchilar</span></button>
+        <button class="nav-item" data-section="doctors"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span class="text">Shifokorlar</span></button>
+        <button class="nav-item" data-section="subjects"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7"/><path d="M9 11h5"/></svg><span class="text">Fanlar</span></button>
+        <button class="nav-item" data-section="telegram"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="m8 10 3 3 5-5"/></svg><span class="text">Telegram</span></button>
+        <button class="nav-item" data-section="settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="text">Sozlamalar</span></button>
+        <button class="nav-item" data-section="chat"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="m8 10 3 3 5-5"/></svg><span class="text">Xabarlar</span></button>
+      </nav>
+      <div class="sidebar-footer">
+        <div id="contactLinks"></div>
+        <div class="user-info" id="userInfo"></div>
+        <button class="sidebar-close" aria-label="Menyuni yopish" onclick="window.appSidebarClose()">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>
+        </button>
+        <button class="nav-item" id="logoutBtn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg><span class="text">Chiqish</span></button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <h1 id="pageTitle">Dashbord</h1>
+        <button class="btn btn-outline refresh-btn" onclick="window.appRefresh()" title="Joriy bo'limni joyidan chiqmasdan yangilash"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg><span class="refresh-label">Yangilash</span></button>
+        <div class="clock-box" id="clock"></div>
+        <div id="topbarActions"></div>
+      </div>
+      <div class="contact-strip" id="contactTop"></div>
+      <div class="content" id="content"><div class="empty-state">Yuklanmoqda...</div></div>
+    </main>
+  </div>
+
+  <!-- Modallar -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal" id="modalContent"></div>
+  </div>
+
+  <script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js')
+    .then(reg => console.log('SW registered:', reg.scope))
+    .catch(err => console.log('SW registration failed:', err));
+}
+window.isBranchAdmin = true;
+</script>
+  <script src="/js/api.js"></script>
+  <script src="/js/chat.js"></script>
+  <script src="/js/admin.js"></script>
+</body>
+</html>

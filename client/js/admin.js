@@ -1,8 +1,11 @@
 (function () {
-  if (API.getRole() !== 'admin') {
+  const role = API.getRole();
+  if (role !== 'admin' && role !== 'branch_admin') {
     goLogin();
     return;
   }
+
+  const isBranchAdmin = role === 'branch_admin' || window.isBranchAdmin === true;
 
   document.getElementById('userInfo').textContent = '👤 ' + API.getFullName();
 
@@ -11,6 +14,19 @@
   const modalContent = document.getElementById('modalContent');
   const pageTitle = document.getElementById('pageTitle');
   const topbarActions = document.getElementById('topbarActions');
+
+  // Filial paneli sarlavhasini o'rnatish
+  if (isBranchAdmin) {
+    const branchName = API.getBranchName();
+    if (branchName) {
+      document.getElementById('pageTitle').textContent = 'Dashbord';
+      const h2 = document.querySelector('.sidebar-header h2');
+      const span = document.querySelector('.sidebar-header span');
+      if (h2) h2.textContent = 'OLIMP-LIDER';
+      if (span) span.textContent = branchName + '-MAKTAB FILIALI';
+      document.title = 'OLIMP-LIDER — ' + branchName + '-MAKTAB FILIALI';
+    }
+  }
 
   let students = [];
   let currentSection = 'dashboard';
@@ -226,6 +242,7 @@
     subjects: 'Fanlar',
     telegram: 'Telegram bot',
     settings: 'Sozlamalar',
+    branches: 'Filiallar',
   };
 
   document.querySelectorAll('.nav-item[data-section]').forEach((btn) => {
@@ -240,6 +257,16 @@
     navigateTo(btn.dataset.section);
     });
   });
+
+  // Filiallar nav itemni faqat super_admin/admin ko'radi
+  const navBranches = document.getElementById('navBranches');
+  if (navBranches) {
+    if (role === 'super_admin' || role === 'admin') {
+      navBranches.style.display = '';
+    } else {
+      navBranches.style.display = 'none';
+    }
+  }
 
   async function navigateTo(section) {
     currentSection = section;
@@ -259,6 +286,7 @@
       else if (section === 'subjects') await renderSubjects();
       else if (section === 'telegram') await renderTelegram();
       else if (section === 'settings') renderSettings();
+      else if (section === 'branches') await renderBranches();
     } catch (e) {
       content.innerHTML = '<div class="alert-error" style="display:block;max-width:500px;margin:20px auto;">' + escapeHtml(e.message) + '</div>';
     }
@@ -1379,6 +1407,155 @@ initContact('contactTop');
       });
     });
   }
+
+  // ---------- FILIALLAR (super_admin/admin) ----------
+  async function renderBranches() {
+    topbarActions.innerHTML = `
+      <button class="btn btn-primary" id="addBranchBtn">+ Filial qo'shish</button>
+    `;
+    content.innerHTML = '<div class="empty-state">Yuklanmoqda...</div>';
+    try {
+      const branches = await API.get('/api/branches');
+      content.innerHTML = `
+        <div class="panel">
+          <div class="panel-header"><h3>Filiallar boshqaruvi</h3></div>
+          <div class="panel-body">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Filial nomi</th>
+                    <th>Maktab raqami</th>
+                    <th>Manzil</th>
+                    <th>Telefon</th>
+                    <th>O'quvchilar</th>
+                    <th>O'quvchilar</th>
+                    <th>Shifokorlar</th>
+                    <th>Holat</th>
+                    <th>Amallar</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${branches.map((b) => `
+                    <tr>
+                      <td><strong>${escapeHtml(b.name)}</strong></td>
+                      <td>${escapeHtml(b.school_number || '-')}</td>
+                      <td>${escapeHtml(b.address || '-')}</td>
+                      <td>${escapeHtml(b.phone || '-')}</td>
+                      <td>${b.student_count}</td>
+                      <td>${b.teacher_count}</td>
+                      <td>${b.doctor_count}</td>
+                      <td><span class="badge badge-${b.is_active ? 'success' : 'danger'}">${b.is_active ? 'Faol' : 'No'faol'}</span></td>
+                      <td>
+                        <button class="btn btn-sm btn-outline" onclick="window.appEditBranch(${b.id})">Tahrirlash</button>
+                        ${b.student_count === 0 && b.teacher_count === 0 && b.doctor_count === 0 ? `<button class="btn btn-sm btn-outline" style="color:var(--danger)" onclick="window.appDeleteBranch(${b.id})">O'chirish</button>` : '<span class="muted">—</span>'}
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('addBranchBtn').addEventListener('click', () => {
+        const html = `
+          <div class="modal-header"><h3>Yangi filial qo'shish</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
+          <div class="modal-body">
+            <div class="form-group"><label>Filial nomi *</label><input id="nbName" placeholder="Masalan: 168-maktab"></div>
+            <div class="form-group"><label>Maktab raqami</label><input id="nbNumber" placeholder="168"></div>
+            <div class="form-group"><label>Manzil</label><input id="nbAddress" placeholder="Manzil"></div>
+            <div class="form-group"><label>Telefon</label><input id="nbPhone" placeholder="+998 90 123 45 67"></div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="window.appCloseModal()">Bekor</button>
+            <button class="btn btn-primary" id="saveBranchBtn">Saqlash</button>
+          </div>
+        `;
+        showModal(html);
+        document.getElementById('saveBranchBtn').addEventListener('click', async () => {
+          const btn = document.getElementById('saveBranchBtn');
+          btn.disabled = true;
+          try {
+            await API.post('/api/branches', {
+              name: document.getElementById('nbName').value.trim(),
+              school_number: document.getElementById('nbNumber').value.trim(),
+              address: document.getElementById('nbAddress').value.trim(),
+              phone: document.getElementById('nbPhone').value.trim(),
+            });
+            toast('Filial qo\'shildi');
+            closeModal();
+            await renderBranches();
+          } catch (e) {
+            toast(e.message, 'error');
+            btn.disabled = false;
+          }
+        });
+      });
+    } catch (e) {
+      content.innerHTML = '<div class="alert-error" style="display:block;max-width:500px;margin:20px auto;">' + escapeHtml(e.message) + '</div>';
+    }
+  }
+
+  window.appEditBranch = async (id) => {
+    try {
+      const branches = await API.get('/api/branches');
+      const b = branches.find((x) => x.id === id);
+      if (!b) return;
+      const users = await API.get('/api/users');
+      const admins = users.filter((u) => u.role === 'admin' || u.role === 'super_admin');
+      const html = `
+        <div class="modal-header"><h3>Filialni tahrirlash — ${escapeHtml(b.name)}</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
+        <div class="modal-body">
+          <div class="form-group"><label>Filial nomi *</label><input id="ebName" value="${escapeHtml(b.name)}"></div>
+          <div class="form-group"><label>Maktab raqami</label><input id="ebNumber" value="${escapeHtml(b.school_number || '')}"></div>
+          <div class="form-group"><label>Manzil</label><input id="ebAddress" value="${escapeHtml(b.address || '')}"></div>
+          <div class="form-group"><label>Telefon</label><input id="ebPhone" value="${escapeHtml(b.phone || '')}"></div>
+          <div class="form-group"><label>Holat</label><select id="ebActive"><option value="1" ${b.is_active ? 'selected' : ''}>Faol</option><option value="0" ${!b.is_active ? 'selected' : ''}>No'faol</option></select></div>
+          <div class="form-group"><label>Filial admini</label><select id="ebAdminId"><option value="">Tanlanmagan</option>${admins.map((a) => `<option value="${a.id}" ${b.admin_id === a.id ? 'selected' : ''}>${escapeHtml(a.username || a.fullName)}</option>`).join('')}</select></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" onclick="window.appCloseModal()">Bekor</button>
+          <button class="btn btn-primary" id="updateBranchBtn">Saqlash</button>
+        </div>
+      `;
+      showModal(html);
+      document.getElementById('updateBranchBtn').addEventListener('click', async () => {
+        const btn = document.getElementById('updateBranchBtn');
+        btn.disabled = true;
+        try {
+          await API.put('/api/branches/' + id, {
+            name: document.getElementById('ebName').value.trim(),
+            school_number: document.getElementById('ebNumber').value.trim(),
+            address: document.getElementById('ebAddress').value.trim(),
+            phone: document.getElementById('ebPhone').value.trim(),
+            is_active: document.getElementById('ebActive').value === '1',
+            admin_id: document.getElementById('ebAdminId').value ? Number(document.getElementById('ebAdminId').value) : null,
+          });
+          toast('Filial saqlandi');
+          closeModal();
+          await renderBranches();
+        } catch (e) {
+          toast(e.message, 'error');
+          btn.disabled = false;
+        }
+      });
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
+
+  window.appDeleteBranch = async (id) => {
+    if (!confirm('Filialni o'chirishingizga ishonchingiz komilmi?')) return;
+    try {
+      await API.del('/api/branches/' + id);
+      toast('Filial o\'chirildi');
+      await renderBranches();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
 
   // ---------- Chiqish ----------
   document.getElementById('logoutBtn').addEventListener('click', () => {

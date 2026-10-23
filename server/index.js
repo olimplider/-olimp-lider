@@ -30,10 +30,28 @@ const JWT_SECRET = process.env.JWT_SECRET || 'maktab-maxfiy-kalit-2026';
 if (app.get('env') === 'production') app.set('trust proxy', 1);
 app.disable('x-powered-by');
 
+const bodyParser = require('body-parser');
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-app.use(express.json({ limit: '2mb' }));
+// Custom JSON body parser (body-parser 2.3.0 has JSON.parse bug with Express 5)
+app.use((req, res, next) => {
+  if (req.headers['content-type'] && req.headers['content-type'].includes('application/json')) {
+    const chunks = [];
+    req.on('data', chunk => { chunks.push(chunk); });
+    req.on('end', () => {
+      try {
+        const buf = Buffer.concat(chunks);
+        req.body = buf.length ? JSON.parse(buf.toString('utf8')) : {};
+      } catch (e) {
+        req.body = {};
+      }
+      next();
+    });
+  } else {
+    next();
+  }
+});
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginResourcePolicy: false,
@@ -255,14 +273,35 @@ app.post('/api/auth/login', (req, res) => {
   if (!user || !db.verifyPassword(password || '', user.passwordHash)) {
     return res.status(401).json({ error: 'Login yoki parol noto`g`ri' });
   }
+  const branch = db.store.branches.find((b) => b.id === user.branch_id);
   const token = signToken(user);
-  res.json({ token, role: user.role, fullName: user.fullName, studentId: user.studentId || null, teacherId: user.teacherId || null, redirect: secretPages.roleUrl(user.role) });
+  res.json({
+    token,
+    role: user.role,
+    fullName: user.fullName,
+    studentId: user.studentId || null,
+    teacherId: user.teacherId || null,
+    branch_id: user.branch_id || null,
+    branch_name: branch ? branch.name : null,
+    redirect: secretPages.roleUrl(user.role),
+  });
 });
 
 app.get('/api/auth/me', authRequired, (req, res) => {
   const user = db.store.users.find((u) => u.id === req.user.id);
   if (!user) return res.status(404).json({ error: 'Foydalanuvchi topilmadi' });
-  res.json({ id: user.id, username: user.username, role: user.role, fullName: user.fullName, studentId: user.studentId || null, teacherId: user.teacherId || null, redirect: secretPages.roleUrl(user.role) });
+  const branch = db.store.branches.find((b) => b.id === user.branch_id);
+  res.json({
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    fullName: user.fullName,
+    studentId: user.studentId || null,
+    teacherId: user.teacherId || null,
+    branch_id: user.branch_id || null,
+    branch_name: branch ? branch.name : null,
+    redirect: secretPages.roleUrl(user.role),
+  });
 });
 
 // ---------- Admin sozlamalari (login/parolni o'zgartirish) ----------
@@ -457,7 +496,11 @@ function canClass(teacher, className) {
 }
 
 app.get('/api/teachers', authRequired, adminOnly, (req, res) => {
-  const list = db.store.teachers.map((t) => {
+  let list = db.store.teachers;
+  if (req.user.role !== 'super_admin' && req.user.role !== 'admin') {
+    list = list.filter((t) => t.branch_id === req.user.branch_id);
+  }
+  list = list.map((t) => {
     const user = db.store.users.find((u) => u.teacherId === t.id);
     const { photo, ...rest } = t;
     return { ...rest, photoUrl: photo ? '/api/teachers/' + t.id + '/photo' : null, username: user ? user.username : null };
@@ -503,6 +546,7 @@ app.post('/api/teachers', authRequired, adminOnly, (req, res) => {
     photo: b.photo || null,
     subjects: (Array.isArray(b.subjects) ? b.subjects : []).map((s) => String(s).trim()).filter(Boolean),
     classes: (Array.isArray(b.classes) ? b.classes : []).map((s) => String(s).trim()).filter(Boolean),
+    branch_id: req.user.branch_id || null,
     createdAt: new Date().toISOString(),
   };
   db.store.teachers.push(teacher);
@@ -520,6 +564,7 @@ app.post('/api/teachers', authRequired, adminOnly, (req, res) => {
     fullName,
     teacherId: teacher.id,
     studentId: null,
+    branch_id: req.user.branch_id || null,
   };
   db.store.users.push(user);
 
@@ -611,6 +656,123 @@ app.delete('/api/teachers/:id', authRequired, adminOnly, (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- Filiallar (faqat super_admin) ----------
+function superAdminOnly(req, res, next) {
+  if (req.user.role !== 'super_admin' && req.user.role !== 'admin') return res.status(403).json({ error: 'Ruxsat yo`q' });
+  next();
+}
+
+function branchNameById(id) {
+  const b = db.store.branches.find((x) => x.id === id);
+  return b ? b.name : null;
+}
+
+// Barcha filiallar ro'yxati
+app.get('/api/branches', authRequired, superAdminOnly, (req, res) => {
+  const list = db.store.branches.map((b) => ({
+    id: b.id,
+    name: b.name,
+    school_number: b.school_number,
+    address: b.address,
+    phone: b.phone,
+    is_active: b.is_active,
+    created_at: b.created_at,
+    admin_id: b.admin_id,
+    admin_username: db.store.users.find((u) => u.id === b.admin_id)?.username || null,
+    student_count: db.store.students.filter((s) => s.branch_id === b.id).length,
+    teacher_count: db.store.teachers.filter((t) => t.branch_id === b.id).length,
+    doctor_count: db.store.doctors.filter((d) => d.branch_id === b.id).length,
+  }));
+  res.json(list);
+});
+
+// Yangi filial yaratish
+app.post('/api/branches', authRequired, superAdminOnly, (req, res) => {
+  const b = req.body || {};
+  const name = String(b.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Filial nomi majburiy' });
+  const taken = db.store.branches.find((x) => x.name.toLowerCase() === name.toLowerCase());
+  if (taken) return res.status(400).json({ error: 'Bu nom bilan filial allaqachon mavjud' });
+
+  const branch = {
+    id: db.nextId('branches'),
+    name,
+    school_number: String(b.school_number || '').trim(),
+    address: String(b.address || '').trim(),
+    phone: String(b.phone || '').trim(),
+    is_active: b.is_active !== false,
+    created_at: new Date().toISOString(),
+    admin_id: null,
+  };
+  db.store.branches.push(branch);
+  db.saveCollection('branches');
+  res.status(201).json(branch);
+});
+
+// Filialni tahrirlash / admin biriktirish
+app.put('/api/branches/:id', authRequired, superAdminOnly, (req, res) => {
+  const branch = db.store.branches.find((b) => b.id === Number(req.params.id));
+  if (!branch) return res.status(404).json({ error: 'Filial topilmadi' });
+  const b = req.body || {};
+  if (b.name !== undefined) {
+    const name = String(b.name).trim();
+    if (!name) return res.status(400).json({ error: 'Nom bo`sh bo`lmasin' });
+    const taken = db.store.branches.find((x) => x.name.toLowerCase() === name.toLowerCase() && x.id !== branch.id);
+    if (taken) return res.status(400).json({ error: 'Bu nom bilan filial allaqachon mavjud' });
+    branch.name = name;
+  }
+  if (b.school_number !== undefined) branch.school_number = String(b.school_number || '').trim();
+  if (b.address !== undefined) branch.address = String(b.address || '').trim();
+  if (b.phone !== undefined) branch.phone = String(b.phone || '').trim();
+  if (b.is_active !== undefined) branch.is_active = b.is_active === true;
+  if (b.admin_id !== undefined) branch.admin_id = b.admin_id ? Number(b.admin_id) : null;
+  db.saveCollection('branches');
+  res.json({ ok: true, branch });
+});
+
+// Filialni o'chirish (faqat agar o'quvchi, o'quvchi, shifokor yo'q bo'lsa)
+app.delete('/api/branches/:id', authRequired, superAdminOnly, (req, res) => {
+  const id = Number(req.params.id);
+  const branch = db.store.branches.find((b) => b.id === id);
+  if (!branch) return res.status(404).json({ error: 'Filial topilmadi' });
+  const studentCount = db.store.students.filter((s) => s.branch_id === id).length;
+  const teacherCount = db.store.teachers.filter((t) => t.branch_id === id).length;
+  const doctorCount = db.store.doctors.filter((d) => d.branch_id === id).length;
+  if (studentCount > 0 || teacherCount > 0 || doctorCount > 0) {
+    return res.status(400).json({ error: 'Filialda ma`lumotlar bor, avval ularni o\'chiring yoki boshqa filialga ko\'ching' });
+  }
+  db.store.branches = db.store.branches.filter((b) => b.id !== id);
+  // Foydalanuvchilarndan bu filialni bo'shatish
+  db.store.users.forEach((u) => { if (u.branch_id === id) u.branch_id = null; });
+  db.saveCollection('branches');
+  db.saveCollection('users');
+  res.json({ ok: true });
+});
+
+// Filial statistikasi
+app.get('/api/branches/:id/stats', authRequired, superAdminOnly, (req, res) => {
+  const id = Number(req.params.id);
+  const branch = db.store.branches.find((b) => b.id === id);
+  if (!branch) return res.status(404).json({ error: 'Filial topilmadi' });
+  const students = db.store.students.filter((s) => s.branch_id === id);
+  const teachers = db.store.teachers.filter((t) => t.branch_id === id);
+  const doctors = db.store.doctors.filter((d) => d.branch_id === id);
+  const payments = db.store.payments.filter((p) => {
+    const s = db.store.students.find((x) => x.id === p.studentId);
+    return s && s.branch_id === id;
+  });
+  res.json({
+    id: branch.id,
+    name: branch.name,
+    school_number: branch.school_number,
+    student_count: students.length,
+    teacher_count: teachers.length,
+    doctor_count: doctors.length,
+    payment_count: payments.length,
+    paid_count: payments.filter((p) => p.paid).length,
+  });
+});
+
 // ---------- Shifokorlar ----------
 function doctorOnly(req, res, next) {
   if (req.user.role !== 'doctor') return res.status(403).json({ error: 'Ruxsat yo`q' });
@@ -636,7 +798,11 @@ function medicalView(m) {
 }
 
 app.get('/api/doctors', authRequired, adminOnly, (req, res) => {
-  const list = db.store.doctors.map((d) => {
+  let list = db.store.doctors;
+  if (req.user.role !== 'super_admin' && req.user.role !== 'admin') {
+    list = list.filter((d) => d.branch_id === req.user.branch_id);
+  }
+  list = list.map((d) => {
     const user = db.store.users.find((u) => u.doctorId === d.id);
     const { photo, ...rest } = d;
     return { ...rest, photoUrl: photo ? '/api/doctors/' + d.id + '/photo' : null, username: user ? user.username : null };
@@ -654,6 +820,7 @@ app.post('/api/doctors', authRequired, adminOnly, (req, res) => {
     fullName,
     position: String(b.position || '').trim(),
     photo: b.photo || null,
+    branch_id: req.user.branch_id || null,
     createdAt: new Date().toISOString(),
   };
   db.store.doctors.push(doctor);
@@ -662,7 +829,7 @@ app.post('/api/doctors', authRequired, adminOnly, (req, res) => {
   username = ensureUniqueUsername(username || makeUsername('shifokor', String(doctor.id)));
   const password = b.password && String(b.password).length >= 4 ? String(b.password) : makePassword(8);
 
-const user = {
+  const user = {
     id: db.nextId('users'),
     username,
     passwordHash: db.hashPassword(password),
@@ -672,6 +839,7 @@ const user = {
     doctorId: doctor.id,
     studentId: null,
     teacherId: null,
+    branch_id: req.user.branch_id || null,
   };
   db.store.users.push(user);
 
@@ -1162,7 +1330,11 @@ app.get('/api/teacher/stats', authRequired, teacherOnly, (req, res) => {
 
 // ---------- O'quvchilar ----------
 app.get('/api/students', authRequired, adminOnly, (req, res) => {
-  res.json(sortStudents(db.store.students).map((s) => {
+  let list = db.store.students;
+  if (req.user.role !== 'super_admin' && req.user.role !== 'admin') {
+    list = list.filter((s) => s.branch_id === req.user.branch_id);
+  }
+  res.json(sortStudents(list).map((s) => {
     const { photo, ...rest } = s;
     return { ...rest, photoUrl: photo ? '/api/students/' + s.id + '/photo' : null };
   }));
@@ -1172,7 +1344,7 @@ app.post('/api/students', authRequired, adminOnly, (req, res) => {
   const b = req.body || {};
   if (!b.firstName || !b.lastName) return res.status(400).json({ error: 'Ism va familya majburiy' });
 
-  const student = {
+const student = {
     id: db.nextId('students'),
     firstName: String(b.firstName).trim(),
     lastName: String(b.lastName).trim(),
@@ -1184,6 +1356,7 @@ app.post('/api/students', authRequired, adminOnly, (req, res) => {
     parentName: String(b.parentName || '').trim(),
     parentPhone: String(b.parentPhone || '').trim(),
     photo: null,
+    branch_id: req.user.branch_id || null,
     createdAt: new Date().toISOString(),
   };
 
@@ -1205,6 +1378,7 @@ db.store.users.push({
     role: 'parent',
     fullName: student.parentName || `${student.firstName} ning ota-onasi`,
     studentId: student.id,
+    branch_id: req.user.branch_id || null,
   });
 
   db.saveCollection('students');
@@ -1916,7 +2090,12 @@ app.get('/api/payments', authRequired, (req, res) => {
     return res.json(list);
   }
 
-  const studentIds = db.store.students.map((s) => s.id);
+  let studentIds;
+  if (req.user.role === 'super_admin' || req.user.role === 'admin') {
+    studentIds = db.store.students.map((s) => s.id);
+  } else {
+    studentIds = db.store.students.filter((s) => s.branch_id === req.user.branch_id).map((s) => s.id);
+  }
   const list = db.store.payments
     .filter((p) => studentIds.includes(p.studentId))
     .filter((p) => (!isNaN(month) ? p.month === month : true) && (!isNaN(year) ? p.year === year : true));
@@ -1962,6 +2141,10 @@ app.get('/api/attendance', authRequired, (req, res) => {
   let list = db.store.attendance;
   if (date) list = list.filter((a) => a.date === date);
   if (req.user.role === 'parent') list = list.filter((a) => a.studentId === req.user.studentId);
+  else if (req.user.role !== 'super_admin' && req.user.role !== 'admin') {
+    const studentIds = db.store.students.filter((s) => s.branch_id === req.user.branch_id).map((s) => s.id);
+    list = list.filter((a) => studentIds.includes(a.studentId));
+  }
   res.json(list);
 });
 
@@ -2044,6 +2227,10 @@ app.get('/api/grades', authRequired, (req, res) => {
     req.user.role === 'parent' ? Number(req.user.studentId) : Number(req.query.studentId);
   let list = db.store.grades;
   if (!isNaN(studentId)) list = list.filter((g) => g.studentId === studentId);
+  if (req.user.role !== 'super_admin' && req.user.role !== 'admin' && req.user.role !== 'parent') {
+    const studentIds = db.store.students.filter((s) => s.branch_id === req.user.branch_id).map((s) => s.id);
+    list = list.filter((g) => studentIds.includes(g.studentId));
+  }
   res.json(list);
 });
 
@@ -2266,12 +2453,16 @@ function invalidateStudentMap() {
 
 function chatContactsForUser(me) {
   const all = db.store.users;
+  // Filial bo'yicha filtrlash (super_admin/admin bor barcha filiallarni ko'ra oladi)
+  const allowedUsers = me.role === 'super_admin' || me.role === 'admin'
+    ? all
+    : all.filter((u) => u.branch_id === me.branch_id);
   const contacts = [];
   const otherIds = new Set();
 
   if (me.role === 'admin') {
     // Admin ham mavjud foydalanuvchilarga yozishi mumkin.
-    for (const u of all) {
+    for (const u of allowedUsers) {
       if (u.id === me.id) continue;
       otherIds.add(u.id);
     }
@@ -2280,14 +2471,14 @@ function chatContactsForUser(me) {
     if (st) {
       const teachers = db.store.teachers;
       const tById = new Map(teachers.map((t) => [t.id, t]));
-      for (const tu of all) {
+      for (const tu of allowedUsers) {
         if (tu.role !== 'teacher') continue;
         const t = tById.get(tu.teacherId);
         if (t && t.classes && t.classes.includes(st.className)) otherIds.add(tu.id);
       }
     }
     // Admin va shifokor ham ota-ona uchun mavjud.
-    for (const u of all) {
+    for (const u of allowedUsers) {
       if (u.role === 'admin' || u.role === 'doctor') otherIds.add(u.id);
     }
   } else if (me.role === 'teacher') {
@@ -2295,17 +2486,17 @@ function chatContactsForUser(me) {
     if (t && t.classes) {
       const classes = t.classes;
       const sm = studentMap();
-      for (const pu of all) {
+      for (const pu of allowedUsers) {
         if (pu.role !== 'parent' || !pu.studentId) continue;
         const st = sm.get(pu.studentId);
         if (st && classes.includes(st.className)) otherIds.add(pu.id);
       }
     }
-    for (const u of all) {
+    for (const u of allowedUsers) {
       if (u.role === 'admin' || u.role === 'doctor') otherIds.add(u.id);
     }
   } else if (me.role === 'doctor') {
-    for (const u of all) {
+    for (const u of allowedUsers) {
       if (u.id === me.id) continue;
       if (u.role === 'parent' || u.role === 'teacher' || u.role === 'admin') otherIds.add(u.id);
     }
@@ -2345,9 +2536,14 @@ app.get('/api/chat/conversations', authRequired, (req, res) => {
   const me = db.store.users.find((u) => u.id === req.user.id);
   if (!me) return res.status(404).json({ error: 'Foydalanuvchi topilmadi' });
   const all = db.store.users;
+  // Filial bo'yicha filtrlash
+  const allowedUserIds = me.role === 'super_admin' || me.role === 'admin'
+    ? new Set(all.map((u) => u.id))
+    : new Set(all.filter((u) => u.branch_id === me.branch_id).map((u) => u.id));
   const convMap = {};
   for (const m of db.store.messages) {
     if (m.from !== me.id && m.to !== me.id) continue;
+    if (!allowedUserIds.has(m.from) || !allowedUserIds.has(m.to)) continue;
     const otherId = m.from === me.id ? m.to : m.from;
     if (!convMap[otherId]) convMap[otherId] = [];
     convMap[otherId].push(m);
@@ -2500,6 +2696,8 @@ app.use((req, res) => {
 // Express 5 async xatolarni avtomatik shu yerga yuboradi.
 app.use((err, req, res, next) => {
   console.error('Xato:', err && err.message ? err.message : err);
+  console.error('Stack:', err && err.stack ? err.stack.split('\n').slice(0, 5).join(' | ') : '');
+  console.error('Body type:', typeof req.body, 'Body keys:', req.body && Object.keys(req.body));
   if (res.headersSent) return next(err);
   if (req.path.startsWith('/api/')) return res.status(500).json({ error: 'Server xatosi' });
   res.status(500).send('Server xatosi');
