@@ -1111,9 +1111,9 @@ topbarActions.innerHTML = `
           <div style="font-size:26px;font-weight:800">${avg}</div><div style="font-size:12px;opacity:.9">o'rtacha baho</div>
         </div>
         <div style="display:flex;gap:8px">
-          <span class="badge" style="background:#22c55e;color:#fff">5: ${balls}</span>
-          <span class="badge" style="background:#3b82f6;color:#fff">4: ${fours}</span>
-          <span class="badge" style="background:#f59e0b;color:#fff">3: ${threes}</span>
+          <span class="badge" style="background:#052e16;color:#4ade80">5: ${balls}</span>
+          <span class="badge" style="background:#082f49;color:#60a5fa">4: ${fours}</span>
+          <span class="badge" style="background:#451a03;color:#fbbf24">3: ${threes}</span>
         </div>
       </div>
     </div>`;

@@ -7,7 +7,30 @@
   <title>OLIMP-LIDER — Ota-ona paneli</title>
   <link rel="icon" type="image/png" href="/assets/logo.png">
   <link rel="apple-touch-icon" href="/assets/logo.png">
-  <link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/style.css">
+  <style>
+    /* Critical CSS - inline to prevent FOUC */
+    :root {
+      --bg: #0a0d0a;
+      --bg-grad: linear-gradient(135deg, #0a0d0a 0%, #0f172a 45%, #0a0d0a 100%);
+      --ink: #f1f5f9;
+      --ink-2: #cbd5e1;
+      --muted: #94a3b8;
+      --gold: #d4af37;
+      --gold-soft: rgba(212, 175, 55, 0.16);
+      --border: rgba(212, 175, 55, 0.35);
+      --radius-lg: 20px;
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
+      --text: #f1f5f9;
+      --text-muted: #9aa488;
+      --success: #58a946;
+      --danger: #c0392b;
+    }
+    html { background-color: var(--bg); }
+    body { background: var(--bg-grad); color: var(--ink); margin: 0; }
+    * { touch-action: manipulation; }
+    :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  </style>
 </head>
 <body>
   <div class="app">

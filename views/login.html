@@ -8,7 +8,6 @@
   <link rel="icon" type="image/png" href="/assets/logo.png">
   <link rel="apple-touch-icon" href="/assets/logo.png">
   <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#0e130e">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="OLIMP-LIDER">
@@ -53,96 +52,34 @@
       --ease: cubic-bezier(0.22, 1, 0.36, 1);
       --acc: #d4af37;
       --acc-deep: #9a7b22;
-      --acc-2: #e8cc6e.
-      --gold-2: #e8cc6e.
-      --gold-soft-b: rgba(212, 175, 55, 0.18).
-      --acc-soft: rgba(212, 175, 55, 0.14).
-      --green-soft: rgba(88, 169, 70, 0.16).
-      --red-soft: rgba(192, 57, 43, 0.16).
-      --blue-soft: rgba(63, 107, 143, 0.24).
-      --amber-soft: rgba(255, 190, 70, 0.15).
-      --purple-soft: rgba(146, 110, 196, 0.2).
-      --bg-grad-a: rgba(212, 175, 55, 0.06).
-      --bg-grad-b: rgba(46, 62, 34, 0.12).
-      --bg-grad-c: rgba(5, 7, 10, 0.82).
-      --card-gradient: linear-gradient(165deg, rgba(255, 255, 255, 0.06), rgba(16, 21, 14, 0.82)).
-      --card-velvet: rgba(16, 21, 14, 0.82).
-      --backdrop: rgba(4, 6, 4, 0.62).
-      --blur: blur(12px) saturate(100%).
-      --border-ok: #d4af37.
-      --success: #58a946.
-      --success-light: rgba(88, 169, 70, 0.16).
-      --danger: #c0392b.
-      --text-muted: #9aa488.
-      --blur: blur(12px) saturate(100%).
+      --acc-2: #e8cc6e;
+      --gold-2: #e8cc6e;
+      --gold-soft-b: rgba(212, 175, 55, 0.18);
+      --acc-soft: rgba(212, 175, 55, 0.14);
+      --green-soft: rgba(88, 169, 70, 0.16);
+      --red-soft: rgba(192, 57, 43, 0.16);
+      --blue-soft: rgba(63, 107, 143, 0.24);
+      --amber-soft: rgba(255, 190, 70, 0.15);
+      --purple-soft: rgba(146, 110, 196, 0.2);
+      --bg-grad-a: rgba(212, 175, 55, 0.06);
+      --bg-grad-b: rgba(46, 62, 34, 0.12);
+      --bg-grad-c: rgba(5, 7, 10, 0.82);
+      --card-gradient: linear-gradient(165deg, rgba(255, 255, 255, 0.06), rgba(16, 21, 14, 0.82));
+      --card-velvet: rgba(16, 21, 14, 0.82);
+      --backdrop: rgba(4, 6, 4, 0.62);
+      --blur: blur(12px) saturate(100%);
+      --border-ok: #d4af37;
+      --success: #58a946;
+      --success-light: rgba(88, 169, 70, 0.16);
+      --danger: #c0392b;
+      --text-muted: #9aa488;
     }
     html { background-color: var(--bg); }
-    .panel { opacity: 1 !important; visibility: visible !important; display: block !important; }
-    .stat-card { opacity: 1 !important; visibility: visible !important; display: flex !important; }
-    .panel { opacity: 1 !important; visibility: visible !important; display: block !important; }
-    .stat-card { opacity: 1 !important; visibility: visible !important; display: flex !important; }
-    @media (max-width: 900px) {
-      .panel { opacity: 1 !important; visibility: visible !important; display: block !important; }
-      .stat-card { opacity: 1 !important; visibility: visible !important; display: flex !important; }
-      .panel { opacity: 1 !important; visibility: visible !important; display: block !important; }
-      .stat-card { opacity: 1 !important; visibility: visible !important; display: flex !important; }
-    }
+    body { background: var(--bg-grad); color: var(--ink); margin: 0; }
     * { touch-action: manipulation; }
     :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-    .modal-close { width: 44px; height: 44px; }
-    .btn { min-height: 44px; padding: 12px 16px; border-radius: 12px; }
-    .btn-sm { min-height: 36px; padding: 8px 12px; }
-    input, select, textarea, .toolbar input.date-pick, .toolbar select { font-size: 16px !important; }
-    .btn { min-height: 44px; padding: 12px 16px; border-radius: 12px; }
-    .btn-sm { min-height: 36px; padding: 8px 12px; }
-    .modal-close { width: 44px; height: 44px; }
-    .modal-close { width: 44px; height: 44px; }
-    .btn { min-height: 44px; padding: 12px 16px; border-radius: 12px; }
-    .btn-sm { min-height: 36px; padding: 8px 12px; }
-    .form-group input, .form-group select, .form-group textarea { min-height: 44px; padding: 12px 14px; }
-    /* Prevent white flash on page load */
-    html { background-color: var(--bg); }
-    /* Ensure panels visible on mobile */
-    @media (max-width: 900px) {
-      .panel { opacity: 1 !important; visibility: visible !important; display: block !important; }
-      .stat-card { opacity: 1 !important; visibility: visible !important; display: flex !important; }
-      .panel { opacity: 1 !important; visibility: visible !important; display: block !important; }
-      .stat-card { opacity: 1 !important; visibility: visible !important; display: flex !important; }
-    }
-    * { touch-action: manipulation; }
-    :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-    .modal-close { width: 44px; height: 44px; }
-    .btn { min-height: 44px; padding: 12px 16px; border-radius: 12px; }
-    .btn-sm { min-height: 36px; padding: 8px 12px; }
-    input, select, textarea, .toolbar input.date-pick, .toolbar select { font-size: 16px !important; }
-    .btn { min-height: 44px; padding: 12px 16px; border-radius: 12px; }
-    .btn-sm { min-height: 36px; padding: 8px 12px; }
-    .modal-close { width: 44px; height: 44px; }
-    .modal-close { width: 44px; height: 44px; }
-    .btn { min-height: 44px; padding: 12px 16px; border-radius: 12px; }
-    .btn-sm { min-height: 36px; padding: 8px 12px; }
-    .form-group input, .form-group select, .form-group textarea { min-height: 44px; padding: 12px 14px; }
-    /* Prevent white flash on page load */
-    html { background-color: var(--bg); }
-    /* Ensure panels visible on mobile */
-    @media (max-width: 900px) {
-      .panel { opacity: 1 !important; visibility: visible !important; display: block !important; }
-      .stat-card { opacity: 1 !important; visibility: visible !important; display: flex !important; }
-      .panel { opacity: 1 !important; visibility: visible !important; display: block !important; }
-      .stat-card { opacity: 1 !important; visibility: visible !important; display: flex !important; }
-    }
-    /* Prevent white flash on page load */
-    html { background-color: var(--bg); }
-    /* Ensure panels visible on mobile */
-    @media (max-width: 900px) {
-      .panel { opacity: 1 !important; visibility: visible !important; display: block !important; }
-      .stat-card { opacity: 1 !important; visibility: visible !important; display: flex !important; }
-      .panel { opacity: 1 !important; visibility: visible !important; display: block !important; }
-      .stat-card { opacity: 1 !important; visibility: visible !important; display: flex !important; }
-    }
-    /* Prevent white flash on page load */
-    html { background-color: var(--bg); }
   </style>
+</head>
 <body>
   <div class="login-page">
     <div class="login-card">
@@ -229,16 +166,13 @@
         btn.textContent = 'Kirish';
       }
     });
+  </script>
   <script>
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js')
-      .then(reg => console.log('SW registered:', reg.scope))
-      .catch(err => console.log('SW registration failed:', err));
-  }
-  if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js')
-    .then(reg => console.log('SW registered:', reg.scope))
-    .catch(err => console.log('SW registration failed:', err));
-</script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .then(reg => console.log('SW registered:', reg.scope))
+        .catch(err => console.log('SW registration failed:', err));
+    }
+  </script>
 </body>
 </html>

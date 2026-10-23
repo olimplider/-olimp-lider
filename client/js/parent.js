@@ -194,13 +194,13 @@
           </div>
 
           <div class="form-grid">
-            <div><label class="toolbar-label">Familiya *</label><input type="text" id="stLastName" value="${escapeHtml(s.lastName)}" placeholder="Familiya"></div>
-            <div><label class="toolbar-label">Ism *</label><input type="text" id="stFirstName" value="${escapeHtml(s.firstName)}" placeholder="Ism"></div>
-            <div class="full"><label class="toolbar-label">Otasining ismi</label><input type="text" id="stPatronymic" value="${escapeHtml(s.patronymic || '')}" placeholder="Otasining ismi"></div>
-            <div><label class="toolbar-label">Tug'ilgan sana</label><input type="date" id="stBirthDate" value="${escapeHtml(s.birthDate || '')}"></div>
-            <div><label class="toolbar-label">Telefon raqam</label><input type="tel" id="stPhone" value="${escapeHtml(s.parentPhone || '')}" placeholder="+998 90 123 45 67"></div>
-            <div class="full"><label class="toolbar-label">Manzil</label><input type="text" id="stAddress" value="${escapeHtml(s.address || '')}" placeholder="Yashash manzili"></div>
-            <div class="full"><label class="toolbar-label">Ota-onaning F.I.Sh</label><input type="text" id="stParentName" value="${escapeHtml(s.parentName || '')}" placeholder="Ota-ona F.I.Sh"></div>
+            <div class="form-group"><label>Familiya *</label><input type="text" id="stLastName" value="${escapeHtml(s.lastName)}" placeholder="Familiya"></div>
+            <div class="form-group"><label>Ism *</label><input type="text" id="stFirstName" value="${escapeHtml(s.firstName)}" placeholder="Ism"></div>
+            <div class="form-group full"><label>Otasining ismi</label><input type="text" id="stPatronymic" value="${escapeHtml(s.patronymic || '')}" placeholder="Otasining ismi"></div>
+            <div class="form-group"><label>Tug'ilgan sana</label><input type="date" id="stBirthDate" value="${escapeHtml(s.birthDate || '')}"></div>
+            <div class="form-group"><label>Telefon raqam</label><input type="tel" id="stPhone" value="${escapeHtml(s.parentPhone || '')}" placeholder="+998 90 123 45 67"></div>
+            <div class="form-group full"><label>Manzil</label><input type="text" id="stAddress" value="${escapeHtml(s.address || '')}" placeholder="Yashash manzili"></div>
+            <div class="form-group full"><label>Ota-onaning F.I.Sh</label><input type="text" id="stParentName" value="${escapeHtml(s.parentName || '')}" placeholder="Ota-ona F.I.Sh"></div>
           </div>
 
           <div class="modal-actions" style="margin-top:20px">
