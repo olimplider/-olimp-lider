@@ -1684,7 +1684,8 @@ initContact('contactTop');
             fd.append('photo', compressed);
             await API.post('/api/teachers/' + t.id + '/photo', fd, true);
           }
-          toast('Saqlanmadi');
+          closeModal();
+          toast('O\'qituvchi saqlandi');
         } else {
           if (username) body.username = username;
           if (password) body.password = password;
@@ -1841,7 +1842,8 @@ initContact('contactTop');
             fd.append('photo', compressed);
             await API.post('/api/doctors/' + d.id + '/photo', fd, true);
           }
-          toast('Saqlanmadi');
+          closeModal();
+          toast('Shifokor saqlandi');
         } else {
           if (username) body.username = username;
           if (password) body.password = password;

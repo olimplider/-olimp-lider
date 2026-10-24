@@ -38,9 +38,9 @@ self.addEventListener('activate', (event) => {
             return caches.delete(cacheName);
           }
         })
-      ).then(() => self.clients.claim());
-    });
-  });
+      );
+    }).then(() => self.clients.claim())
+  );
 });
 
 // Fetch event - implement cache strategies
