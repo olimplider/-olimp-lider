@@ -237,6 +237,7 @@
     schedule: 'Dars jadvali',
     attendance: 'Davomat',
     grades: 'Baholar',
+    tests: 'Nazoratlar',
     teachers: "O'qituvchilar",
     doctors: 'Shifokorlar',
     subjects: 'Fanlar',
@@ -281,6 +282,7 @@
       else if (section === 'schedule') await renderSchedule();
       else if (section === 'attendance') await renderAttendance();
       else if (section === 'grades') await renderGrades();
+      else if (section === 'tests') await renderTests();
       else if (section === 'teachers') await renderTeachers();
       else if (section === 'doctors') await renderDoctors();
       else if (section === 'subjects') await renderSubjects();
@@ -712,6 +714,7 @@ topbarActions.innerHTML = `
         </button>
         <select id="payMonthSel">${renderMonthsSelect(payMonth)}</select>
         <select id="payYearSel">${renderYearsSelect()}</select>
+        <button class="btn btn-outline btn-sm" onclick="window.appPayPdf()">PDF</button>
       </div>`;
 
     document.getElementById('payMonthSel').addEventListener('change', (e) => { payMonth = Number(e.target.value); renderPayTable(); });
@@ -719,6 +722,19 @@ topbarActions.innerHTML = `
 
     await renderPayTable();
   }
+
+  // Joriy oy (va tanlangan sinf) bo'yicha to'lovlar PDF
+  window.appPayPdf = async () => {
+    const cls = fState.payments.cls;
+    const url = '/api/export/payments/pdf?month=' + payMonth + '&year=' + payYear
+      + (cls ? '&className=' + encodeURIComponent(cls) : '');
+    toast('PDF tayyorlanmoqda...');
+    try {
+      await API.download(url, 'tolovlar_' + payYear + '_' + String(payMonth).padStart(2, '0') + '.pdf');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
 
   // Faqat joriy ekranda KO'RINAYOTGAN to'lanmagan o'quvchilarga eslatma
   window.appPayRemind = async () => {
@@ -833,18 +849,28 @@ topbarActions.innerHTML = `
     setCount('Pay', list.length, students.length);
 
     document.querySelectorAll('.switch input').forEach((chk) => {
-      chk.addEventListener('change', async (e) => {
+      chk.addEventListener('change', async () => {
         const pid = Number(chk.dataset.pid);
         const paid = chk.checked;
-        await API.post('/api/payments/toggle', { studentId: pid, month: payMonth, year: payYear, paid });
-        const st = document.getElementById('ps-' + pid);
-        if (st) {
-          st.className = 'pay-status ' + (paid ? 'badge-ok' : 'badge-no');
-          st.textContent = paid ? 'To\'langan' : 'To\'lanmagan';
+        chk.disabled = true;
+        try {
+          await API.post('/api/payments/toggle', { studentId: pid, month: payMonth, year: payYear, paid });
+          payMapLive[pid] = paid;
+          const st = document.getElementById('ps-' + pid);
+          if (st) {
+            st.className = 'pay-status ' + (paid ? 'badge-ok' : 'badge-no');
+            st.textContent = paid ? 'To\'langan' : 'To\'lanmagan';
+          }
+          const row = chk.closest('tr');
+          if (row) row.classList.toggle('pay-row-unpaid', !paid);
+          toast(paid ? (labelName + ' uchun to\'lov tasdiqlandi') : 'To\'lov bekor qilindi');
+        } catch (err) {
+          // Server xato qaytarsa, tugma holatini orqaga qaytaramiz
+          chk.checked = !paid;
+          toast(err.message || 'To`lovni saqlab bo`lmadi', 'error');
+        } finally {
+          chk.disabled = false;
         }
-        const row = chk.closest('tr');
-        if (row) row.classList.toggle('pay-row-unpaid', !paid);
-        toast(paid ? (labelName + ' uchun to\'lov tasdiqlandi') : 'To\'lov bekor qilindi');
       });
     });
   }
@@ -1196,6 +1222,105 @@ topbarActions.innerHTML = `
     await renderGrades();
   }
 
+  // ---------- NAZORATLAR (admin/branch_admin) ----------
+  let testsClassFilter = '';
+
+  async function renderTests() {
+    let tests = await API.get('/api/tests');
+    const classList = [...new Set(tests.map((t) => t.className))].sort();
+    if (testsClassFilter && !classList.includes(testsClassFilter)) testsClassFilter = '';
+    if (testsClassFilter) tests = tests.filter((t) => t.className === testsClassFilter);
+
+    topbarActions.innerHTML = `<div class="toolbar">
+      <select id="testsCls" style="min-width:140px">
+        <option value="">Barcha sinflar</option>
+        ${classList.map((c) => `<option value="${escapeHtml(c)}"${c === testsClassFilter ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+      </select>
+      <button class="btn btn-outline" onclick="window.appTestsPdf()">📄 PDF (albom)</button>
+    </div>`;
+
+    document.getElementById('testsCls').addEventListener('change', (e) => {
+      testsClassFilter = e.target.value;
+      renderTests();
+    });
+
+    if (!tests.length) {
+      content.innerHTML = '<div class="panel"><div class="empty-state"><h4>Nazoratlar topilmadi</h4><p class="muted">O\'qituvchilar panelidan yaratilgan nazoratlar shu yerda ko\'rinadi.</p></div></div>';
+      return;
+    }
+
+    content.innerHTML = tests.map((t) => `
+      <div class="panel">
+        <div class="panel-header"><h3>${escapeHtml(t.title)}</h3><span class="badge badge-blue">${escapeHtml(t.subject)}</span></div>
+        <div class="panel-body" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <span class="badge badge-purple">${escapeHtml(t.className)}</span>
+          <span class="muted">${escapeHtml(t.date)} • max ${t.maxScore} ball</span>
+          <span class="badge badge-green">${t.resultsCount} natija</span>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <button class="btn btn-outline btn-sm" onclick="window.appViewTest(${t.id})">Natijalar</button>
+            <button class="btn btn-outline btn-sm" onclick="window.appTestPdf(${t.id})">📄 PDF</button>
+          </div>
+        </div>
+      </div>`).join('');
+  }
+
+  // Nazorat natijalarini ko'rish modali (admin uchun)
+  async function viewTestModal(id) {
+    try {
+      const tests = await API.get('/api/tests');
+      const t = tests.find((x) => x.id === id);
+      if (!t) return toast('Nazorat topilmadi', 'error');
+      const stusAll = await API.get('/api/students');
+      const stus = stusAll.filter((s) => s.className === t.className);
+      const map = {};
+      (t.results || []).forEach((r) => { map[r.studentId] = Number(r.score); });
+      let sum = 0, n = 0;
+      const rows = stus.map((s, i) => {
+        const has = map[s.id] !== undefined;
+        if (has) { sum += map[s.id]; n++; }
+        return `<tr>
+          <td class="rownum">${i + 1}</td>
+          <td>${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</td>
+          <td style="text-align:center"><span class="badge ${has ? (map[s.id] / t.maxScore >= 0.6 ? 'badge-green' : 'badge-red') : ''}">${has ? map[s.id] : '—'}</span></td>
+          <td style="text-align:center">${has ? Math.round((map[s.id] / t.maxScore) * 100) + '%' : '—'}</td>
+        </tr>`;
+      }).join('');
+      showModal(`
+        <div class="modal-header"><h3>${escapeHtml(t.title)} — natijalar</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
+        <div class="modal-body">
+          <p class="muted" style="margin-bottom:10px">${escapeHtml(t.className)} • ${escapeHtml(t.subject)} • ${escapeHtml(t.date)} • max ${t.maxScore} ball • o'rtacha: <b>${n ? (sum / n).toFixed(1) : '—'}</b></p>
+          ${stus.length ? `<div style="max-height:360px;overflow:auto"><table><thead><tr><th style="width:52px">T/r</th><th>O'quvchi</th><th style="width:80px">Ball</th><th style="width:80px">Foiz</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="hint">Bu sinfda o\'quvchi yo\'q.</div>'}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="window.appTestPdf(${t.id})">📄 PDF yuklab olish</button>
+          <button class="btn btn-ghost" onclick="window.appCloseModal()">Yopish</button>
+        </div>`);
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+
+  async function exportTestsPdf() {
+    toast('PDF albom tayyorlanmoqda...');
+    try {
+      const q = testsClassFilter ? '?className=' + encodeURIComponent(testsClassFilter) : '';
+      await API.download('/api/export/tests/pdf' + q, 'nazoratlar.pdf');
+      toast('PDF albom yuklab olindi');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+
+  async function exportTestPdf(id) {
+    toast('PDF tayyorlanmoqda...');
+    try {
+      await API.download('/api/export/tests/pdf?testId=' + id, 'nazorat_' + id + '.pdf');
+      toast('PDF fayl yuklab olindi');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+
   // ---------- SINFLAR ----------
   async function renderClasses() {
     const classes = await API.get('/api/classes');
@@ -1220,6 +1345,7 @@ topbarActions.innerHTML = `
           <button class="btn btn-outline btn-sm" onclick="window.appExportParents('${escapeHtml(c.name)}')">Login/parol (Word)</button>
           <button class="btn btn-outline btn-sm" onclick="window.appExportShort('${escapeHtml(c.name)}')">Qisqa ro'yxat (Word)</button>
           <button class="btn btn-outline btn-sm" onclick="window.appExportPayments('${escapeHtml(c.name)}')">To'lovlar (Word)</button>
+          <button class="btn btn-outline btn-sm" onclick="window.appExportPaymentsPdf('${escapeHtml(c.name)}')">To'lovlar (PDF)</button>
           <button class="btn btn-danger btn-sm" onclick="window.appDeleteClass('${escapeHtml(c.name)}')">Sinfni o'chirish</button>
         </td>
       </tr>`).join('');
@@ -1429,7 +1555,7 @@ initContact('contactTop');
                     <th>Manzil</th>
                     <th>Telefon</th>
                     <th>O'quvchilar</th>
-                    <th>O'quvchilar</th>
+                    <th>O'qituvchilar</th>
                     <th>Shifokorlar</th>
                     <th>Holat</th>
                     <th>Amallar</th>
@@ -1504,7 +1630,7 @@ initContact('contactTop');
       const b = branches.find((x) => x.id === id);
       if (!b) return;
       const users = await API.get('/api/users');
-      const admins = users.filter((u) => u.role === 'admin' || u.role === 'super_admin');
+      const admins = users.filter((u) => u.role === 'admin' || u.role === 'super_admin' || u.role === 'branch_admin');
       const html = `
         <div class="modal-header"><h3>Filialni tahrirlash — ${escapeHtml(b.name)}</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
         <div class="modal-body">
@@ -1513,7 +1639,13 @@ initContact('contactTop');
           <div class="form-group"><label>Manzil</label><input id="ebAddress" value="${escapeHtml(b.address || '')}"></div>
           <div class="form-group"><label>Telefon</label><input id="ebPhone" value="${escapeHtml(b.phone || '')}"></div>
           <div class="form-group"><label>Holat</label><select id="ebActive"><option value="1" ${b.is_active ? 'selected' : ''}>Faol</option><option value="0" ${!b.is_active ? 'selected' : ''}>No'faol</option></select></div>
-          <div class="form-group"><label>Filial admini</label><select id="ebAdminId"><option value="">Tanlanmagan</option>${admins.map((a) => `<option value="${a.id}" ${b.admin_id === a.id ? 'selected' : ''}>${escapeHtml(a.username || a.fullName)}</option>`).join('')}</select></div>
+          <div class="form-group"><label>Filial admini (mavjud)</label><select id="ebAdminId"><option value="">Tanlanmagan</option>${admins.map((a) => `<option value="${a.id}" ${b.admin_id === a.id ? 'selected' : ''}>${escapeHtml(a.username)}${a.branch_name ? ' (' + escapeHtml(a.branch_name) + ')' : ''}</option>`).join('')}</select></div>
+          <div class="form-group" style="border-top:1px dashed var(--border, #444);padding-top:12px;margin-top:12px;">
+            <label>Yangi filial admini yaratish</label>
+            <input id="ebNewLogin" placeholder="Login (masalan: chilonzor232)" style="margin-bottom:8px;width:100%;">
+            <input id="ebNewPass" placeholder="Parol (kamida 4 belgi)" type="text" style="width:100%;">
+            <small class="muted" style="display:block;margin-top:6px;">Agar login+parol kiritilsa — yangi filial admini yaratiladi va shu filialga biriktiriladi.</small>
+          </div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-ghost" onclick="window.appCloseModal()">Bekor</button>
@@ -1525,15 +1657,30 @@ initContact('contactTop');
         const btn = document.getElementById('updateBranchBtn');
         btn.disabled = true;
         try {
-          await API.put('/api/branches/' + id, {
+          const newLogin = document.getElementById('ebNewLogin').value.trim();
+          const newPass = document.getElementById('ebNewPass').value.trim();
+          if ((newLogin && !newPass) || (!newLogin && newPass)) {
+            toast('Yangi admin uchun login VA parolni kiriting', 'error');
+            btn.disabled = false;
+            return;
+          }
+          const payload = {
             name: document.getElementById('ebName').value.trim(),
             school_number: document.getElementById('ebNumber').value.trim(),
             address: document.getElementById('ebAddress').value.trim(),
             phone: document.getElementById('ebPhone').value.trim(),
             is_active: document.getElementById('ebActive').value === '1',
-            admin_id: document.getElementById('ebAdminId').value ? Number(document.getElementById('ebAdminId').value) : null,
-          });
-          toast('Filial saqlandi');
+          };
+          if (!newLogin) {
+            payload.admin_id = document.getElementById('ebAdminId').value ? Number(document.getElementById('ebAdminId').value) : null;
+          }
+          await API.put('/api/branches/' + id, payload);
+          if (newLogin) {
+            await API.post('/api/branches/' + id + '/admin', { username: newLogin, password: newPass });
+            toast('Filial admini yaratildi: ' + newLogin);
+          } else {
+            toast('Filial saqlandi');
+          }
           closeModal();
           await renderBranches();
         } catch (e) {
@@ -2159,11 +2306,15 @@ initContact('contactTop');
     if (!ids.length) return;
     const labelName = monthNames()[payMonth - 1];
     const yes = paid === true || paid === 'true';
-    if (!confirm(`${ids.length} ta o'quvchining ${labelName} to'lovini ${yes ? "to'langan" : "to'lanmagan"} qilamizmi?`)) return;
-    for (const id of ids) await API.post('/api/payments/toggle', { studentId: id, month: payMonth, year: payYear, paid: yes });
-    clearSel();
-    toast(`${ids.length} ta to'lov yangilandi`);
-    await renderPayTable();
+    if (!confirm(`${ids.length} ta o'quvchining ${labelName} ${payYear} to'lovini ${yes ? "to'langan" : "to'lanmagan"} qilamizmi?`)) return;
+    try {
+      const r = await API.post('/api/payments/bulk', { studentIds: ids, month: payMonth, year: payYear, paid: yes });
+      clearSel();
+      toast(`${r.updated || ids.length} ta to'lov ${yes ? "to'langan" : "to'lanmagan"} deb belgilandi`);
+      await renderPayTable();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
   };
   window.appBulkAtt = async (status) => {
     const ids = selIds();
@@ -2277,6 +2428,9 @@ initContact('contactTop');
   window.appBulkTeachers = () => bulkTeachers();
   window.appAddGrade = () => addGradeModal();
   window.appDelGrade = (id) => deleteGrade(id);
+  window.appViewTest = (id) => viewTestModal(id);
+  window.appTestsPdf = () => exportTestsPdf();
+  window.appTestPdf = (id) => exportTestPdf(id);
   window.appGenPass = genPassword;
   window.appGenUser = genUsername;
   window.appCopy = (id) => {
@@ -2370,6 +2524,20 @@ initContact('contactTop');
       a.click();
       a.remove();
       toast('Word fayl yuklab olindi');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
+  window.appExportPaymentsPdf = async (className) => {
+    if (!className) return;
+    const year = new Date().getFullYear();
+    const safe = String(className).replace(/[^\w\d-]+/g, '_');
+    toast('PDF tayyorlanmoqda...');
+    try {
+      await API.download(
+        '/api/export/payments/pdf?className=' + encodeURIComponent(className) + '&year=' + year,
+        'tolovlar_' + safe + '_' + year + '-' + (year + 1) + '.pdf'
+      );
     } catch (e) {
       toast(e.message, 'error');
     }

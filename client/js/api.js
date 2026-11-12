@@ -71,6 +71,32 @@ const API = {
   del(url) {
     return this.request(url, { method: 'DELETE' });
   },
+
+  // Autentifikatsiyalangan faylni (PDF/DOCX) yuklab olish
+  async download(url, fallbackName) {
+    const res = await fetch(url, { headers: { Authorization: 'Bearer ' + (this.getToken() || '') } });
+    if (res.status === 401) {
+      this.setToken(null);
+      goLogin();
+      throw new Error('Session tugagan');
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Yuklab olishda xato');
+    }
+    const blob = await res.blob();
+    let name = fallbackName || 'fayl.pdf';
+    const cd = res.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="?([^";]+)"?/i);
+    if (m && m[1]) name = m[1];
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  },
 };
 
 function escapeHtml(str) {

@@ -725,9 +725,63 @@ app.put('/api/branches/:id', authRequired, superAdminOnly, (req, res) => {
   if (b.address !== undefined) branch.address = String(b.address || '').trim();
   if (b.phone !== undefined) branch.phone = String(b.phone || '').trim();
   if (b.is_active !== undefined) branch.is_active = b.is_active === true;
-  if (b.admin_id !== undefined) branch.admin_id = b.admin_id ? Number(b.admin_id) : null;
+  if (b.admin_id !== undefined) {
+    const newAdminId = b.admin_id ? Number(b.admin_id) : null;
+    const prevAdminId = branch.admin_id || null;
+    branch.admin_id = newAdminId;
+    if (newAdminId) {
+      // Tanlangan foydalanuvchi shu filialga biriktiriladi (kirishi shu filialga yo'naltiriladi)
+      const adminUser = db.store.users.find((u) => u.id === newAdminId);
+      if (!adminUser) return res.status(400).json({ error: 'Bunday foydalanuvchi topilmadi' });
+      adminUser.branch_id = branch.id;
+      db.saveCollection('users');
+    } else if (prevAdminId && prevAdminId !== newAdminId) {
+      // Admin olib tashlansa — faqat branch_admin foydalanuvchidan filial bog'lanishini uzish
+      const prevUser = db.store.users.find((u) => u.id === prevAdminId);
+      if (prevUser && prevUser.role === 'branch_admin' && prevUser.branch_id === branch.id) {
+        prevUser.branch_id = null;
+        db.saveCollection('users');
+      }
+    }
+  }
   db.saveCollection('branches');
   res.json({ ok: true, branch });
+});
+
+// Filialga yangi admin (branch_admin) qo'shish — login/parol super_admin yaratadi
+app.post('/api/branches/:id/admin', authRequired, superAdminOnly, (req, res) => {
+  const id = Number(req.params.id);
+  const branch = db.store.branches.find((x) => x.id === id);
+  if (!branch) return res.status(404).json({ error: 'Filial topilmadi' });
+  const b = req.body || {};
+  const fullName = String(b.fullName || '').trim();
+  const username = String(b.username || '').trim().toLowerCase();
+  const password = String(b.password || '');
+  if (!username || !password) return res.status(400).json({ error: 'Login va parol majburiy' });
+  if (password.length < 4) return res.status(400).json({ error: 'Parol kamida 4 ta belgi' });
+  const taken = db.store.users.find((u) => u.username === username);
+  if (taken) return res.status(400).json({ error: 'Bu login band, boshqasini tanlang' });
+  const user = {
+    id: db.nextId('users'),
+    username,
+    passwordHash: db.hashPassword(password),
+    pwEnc: secrets.encrypt(password),
+    role: 'branch_admin',
+    fullName: fullName || branch.name + ' filial admini',
+    branch_id: branch.id,
+    studentId: null,
+    teacherId: null,
+    doctorId: null,
+  };
+  db.store.users.push(user);
+  branch.admin_id = user.id;
+  db.saveCollection('users');
+  db.saveCollection('branches');
+  res.status(201).json({
+    ok: true,
+    admin: { id: user.id, username: user.username, fullName: user.fullName, role: user.role, branch_id: branch.id },
+    branch,
+  });
 });
 
 // Filialni o'chirish (faqat agar o'quvchi, o'quvchi, shifokor yo'q bo'lsa)
@@ -747,6 +801,19 @@ app.delete('/api/branches/:id', authRequired, superAdminOnly, (req, res) => {
   db.saveCollection('branches');
   db.saveCollection('users');
   res.json({ ok: true });
+});
+
+// Foydalanuvchilar ro'yxati (filial adminini tanlash uchun; parol oqmaydi)
+app.get('/api/users', authRequired, superAdminOnly, (req, res) => {
+  const list = db.store.users.map((u) => ({
+    id: u.id,
+    username: u.username,
+    fullName: u.fullName || null,
+    role: u.role,
+    branch_id: u.branch_id || null,
+    branch_name: branchNameById(u.branch_id) || null,
+  }));
+  res.json(list);
 });
 
 // Filial statistikasi
@@ -1204,6 +1271,10 @@ app.get('/api/tests', authRequired, (req, res) => {
   const className = String(req.query.className || '').trim();
   let list = db.store.tests;
   if (req.user.role === 'teacher') list = list.filter((t) => t.teacherId === req.user.teacherId);
+  if (req.user.role === 'branch_admin') {
+    const ownTeacherIds = new Set(db.store.teachers.filter((t) => t.branch_id === req.user.branch_id).map((t) => t.id));
+    list = list.filter((t) => ownTeacherIds.has(t.teacherId));
+  }
   if (className) list = list.filter((t) => t.className === className);
   list = list
     .map((t) => ({ ...t, resultsCount: Array.isArray(t.results) ? t.results.length : 0 }))
@@ -1753,6 +1824,208 @@ app.get('/api/export/payments', authRequired, adminOnly, async (req, res) => {
   res.send(buffer);
 });
 
+// ---------- Oylik to'lovlar PDF (A4 albom) ----------
+// ?month=1..12&year=2026[&className=...]  -> bitta oy ro'yxati
+// ?className=...&year=2026               -> butun o'quv yili jadvali (12 oy)
+app.get('/api/export/payments/pdf', authRequired, adminOnly, (req, res) => {
+  const className = String(req.query.className || '').trim();
+  const year = Number(req.query.year) || new Date().getFullYear();
+  const month = Number(req.query.month) || 0;
+  if (month && (month < 1 || month > 12)) return res.status(400).json({ error: 'Oy noto`g`ri' });
+
+  const MONTH_UZ = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
+  const MONTHS_SHORT = ['Sen', 'Okt', 'Noy', 'Dek', 'Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn', 'Iyl', 'Avg'];
+  const ORDER = [9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
+  const fmtMoney = (n) => String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const fmtDate = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '—';
+    return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+  };
+
+  // Filial chegarasi
+  const branchIds = req.user.role === 'branch_admin'
+    ? new Set(db.store.students.filter((s) => s.branch_id === req.user.branch_id).map((s) => s.id))
+    : null;
+
+  let students = db.store.students.slice();
+  if (branchIds) students = students.filter((s) => branchIds.has(s.id));
+  if (className) students = students.filter((s) => (s.className || '(sinsiz)') === className);
+  students.sort((a, b) => String(a.lastName || '').localeCompare(String(b.lastName || ''), 'uz')
+    || String(a.firstName || '').localeCompare(String(b.firstName || ''), 'uz'));
+  if (!students.length) return res.status(400).json({ error: 'O`quvchilar topilmadi' });
+
+  const paidMap = new Map();
+  db.store.payments.filter((p) => p.paid).forEach((p) => {
+    paidMap.set(`${p.studentId}:${Number(p.month)}:${Number(p.year)}`, p);
+  });
+
+  const pickFont = (candidates) => candidates.find((f) => fs.existsSync(f)) || null;
+  const REG = pickFont([
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+    'C:/Windows/Fonts/arial.ttf',
+  ]);
+  const BOLD = pickFont([
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+    'C:/Windows/Fonts/arialbd.ttf',
+  ]);
+
+  const PDFDocument = require('pdfkit');
+  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 30, bufferPages: true, info: { Title: "Oylik to'lovlar — OLIMP-LIDER" } });
+
+  const title = month
+    ? `${MONTH_UZ[month - 1]} ${year} — oylik to'lovlar`
+    : `${className || 'Barcha sinflar'} — ${year}/${year + 1} o'quv yili oylik to'lovlar jadvali`;
+  const safeName = (month
+    ? `tolovlar_${year}_${String(month).padStart(2, '0')}`
+    : `tolovlar_${className || 'barcha'}_${year}-${year + 1}`
+  ).replace(/[^\w\d-]+/g, '_');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName}.pdf"`);
+  doc.pipe(res);
+
+  const PW = 841.89, PH = 595.28, M = 30;
+  const UW = PW - M * 2;
+  const BOTTOM = PH - M - 20;
+  const ROW_H = 17, HEAD_H = 18;
+
+  const drawHeader = (continuation) => {
+    let y = M;
+    doc.fillColor('#000').font(BOLD || REG).fontSize(13)
+      .text('OLIMP-LIDER MAXSUS HARBIY SPORT KLUBI', M, y, { width: UW, align: 'center' });
+    y += 18;
+    doc.fontSize(11).text(title + (continuation ? ' (davomi)' : ''), M, y, { width: UW, align: 'center' });
+    y += 16;
+    doc.font(REG).fontSize(8.5).fillColor('#444')
+      .text(`O'quvchilar: ${students.length}   |   Sana: ${fmtDate(new Date().toISOString())}`, M, y, { width: UW, align: 'center' });
+    y += 14;
+    doc.fillColor('#000');
+    return y;
+  };
+
+  const drawHeadRow = (y, cols) => {
+    let x = M;
+    for (const c of cols) {
+      doc.rect(x, y, c.w, HEAD_H).fillAndStroke('#DCE6F1', '#8A9BAE');
+      doc.fillColor('#000').font(BOLD || REG).fontSize(c.fs || 8.5)
+        .text(c.title, x + 2, y + 5, { width: c.w - 4, align: 'center', lineBreak: false, ellipsis: true });
+      x += c.w;
+    }
+    return y + HEAD_H;
+  };
+
+  const drawRow = (y, cols, cells, alt, fills) => {
+    let x = M;
+    for (const c of cols) {
+      const bg = fills && fills[c.key] ? fills[c.key] : (alt ? '#F7F9FC' : '#FFFFFF');
+      doc.rect(x, y, c.w, ROW_H).fillAndStroke(bg, '#B7C0CC');
+      doc.fillColor('#111').font(REG).fontSize(c.fs || 8.5)
+        .text(String(cells[c.key] ?? ''), x + 2, y + 4.5, { width: c.w - 4, align: c.align || 'left', lineBreak: false, ellipsis: true });
+      x += c.w;
+    }
+    return y + ROW_H;
+  };
+
+  const ensureSpace = (y, need, cols) => {
+    if (y + need <= BOTTOM) return y;
+    doc.addPage();
+    let ny = drawHeader(true);
+    return drawHeadRow(ny, cols);
+  };
+
+  if (month) {
+    // ----- Bitta oy ro'yxati -----
+    const cols = [
+      { key: 'idx', title: '№', w: 34, align: 'center' },
+      { key: 'name', title: "O'quvchi F.I.Sh.", w: 380 },
+      { key: 'cls', title: 'Sinf', w: 62, align: 'center' },
+      { key: 'fee', title: "Oylik to'lov", w: 110, align: 'right' },
+      { key: 'status', title: 'Holat', w: 90, align: 'center' },
+      { key: 'date', title: "To'langan sana", w: 105, align: 'center' },
+    ];
+
+    let y = drawHeadRow(drawHeader(false), cols);
+    let paidCount = 0;
+    let paidSum = 0;
+    let totalFee = 0;
+
+    students.forEach((s, i) => {
+      y = ensureSpace(y, ROW_H, cols);
+      const fee = Number(s.monthlyFee) || 0;
+      totalFee += fee;
+      const p = paidMap.get(`${s.id}:${month}:${year}`);
+      if (p) { paidCount++; paidSum += fee; }
+      y = drawRow(y, cols, {
+        idx: i + 1,
+        name: `${s.lastName || ''} ${s.firstName || ''}`.trim(),
+        cls: s.className || '(sinsiz)',
+        fee: fee ? fmtMoney(fee) + " so'm" : '—',
+        status: p ? "To'langan" : "To'lanmagan",
+        date: p ? fmtDate(p.paidAt) : '—',
+      }, i % 2 === 1, p ? { status: '#E8F6EC' } : { status: '#FDECEC' });
+    });
+
+    y = ensureSpace(y, 58, cols);
+    doc.rect(M, y + 10, UW, 40).fillAndStroke('#F5F7FA', '#B7C0CC');
+    const cells = [
+      ['Jami o`quvchi', String(students.length)],
+      ["To'lagan", `${paidCount} ta`],
+      ["To'lamagan", `${students.length - paidCount} ta`],
+      ["Yig'ilgan summa", `${fmtMoney(paidSum)} so'm`],
+      ['Qarz', `${fmtMoney(Math.max(totalFee - paidSum, 0))} so'm`],
+    ];
+    const cw = UW / cells.length;
+    cells.forEach((c, i) => {
+      const x = M + cw * i;
+      doc.fillColor('#666').font(REG).fontSize(7.5).text(c[0], x + 6, y + 18, { width: cw - 12, align: 'center' });
+      doc.fillColor('#000').font(BOLD || REG).fontSize(10.5).text(c[1], x + 6, y + 30, { width: cw - 12, align: 'center' });
+    });
+  } else {
+    // ----- Butun o'quv yili jadvali -----
+    const cols = [
+      { key: 'idx', title: '№', w: 30, align: 'center' },
+      { key: 'name', title: "O'quvchi F.I.Sh.", w: 260 },
+      ...ORDER.map((m, i) => ({ key: 'm' + i, title: MONTHS_SHORT[i], w: 38, align: 'center', fs: 7.5 })),
+      { key: 'sign', title: 'Imzo', w: 35, align: 'center' },
+    ];
+
+    let y = drawHeadRow(drawHeader(false), cols);
+    students.forEach((s, i) => {
+      y = ensureSpace(y, ROW_H, cols);
+      const cells = {
+        idx: i + 1,
+        name: `${String(s.lastName || '').trim().toUpperCase()} ${String(s.firstName || '').trim().charAt(0).toUpperCase()}${s.patronymic ? String(s.patronymic).trim().charAt(0).toUpperCase() : ''}`.trim(),
+        sign: '',
+      };
+      const fills = {};
+      ORDER.forEach((m, j) => {
+        const py = m >= 9 ? year : year + 1;
+        const ok = paidMap.has(`${s.id}:${m}:${py}`);
+        cells['m' + j] = ok ? '+' : '';
+        if (ok) fills['m' + j] = '#C6EFCE';
+      });
+      y = drawRow(y, cols, cells, i % 2 === 1, fills);
+    });
+
+    y = ensureSpace(y, 44, cols);
+    doc.fillColor('#000').font(REG).fontSize(9)
+      .text('Qabul qiluvchi (mas`ul xodim) imzosi: _______________________   / _______________________ /', M, y + 18, { width: UW });
+  }
+
+  // Sahifa raqamlari
+  const range = doc.bufferedPageRange();
+  for (let i = range.start; i < range.start + range.count; i++) {
+    doc.switchToPage(i);
+    doc.font(REG).fontSize(7.5).fillColor('#888')
+      .text(`OLIMP-LIDER  •  sahifa ${i - range.start + 1} / ${range.count}`, M, PH - M - 12, { width: UW, align: 'center' });
+  }
+  doc.fillColor('#000');
+  doc.end();
+});
+
 // ---------- Oylik baholarni Word (docx) qilib yuklab olish ----------
 const monthNamesUz = () => ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'];
 app.get('/api/export/grades', authRequired, async (req, res) => {
@@ -1889,6 +2162,185 @@ app.get('/api/export/grades', authRequired, async (req, res) => {
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
   res.setHeader('Content-Disposition', `attachment; filename="${safeName}_${subject.replace(/\s+/g, '_')}_${month}_${year}.docx"`);
   res.send(buffer);
+});
+
+// ---------- Nazorat ishini PDF (A4 albom/gorizontal) qilib yuklab olish ----------
+// ?testId=12          -> bitta nazorat
+// ?className=6-A      -> shu sinfning barcha nazoratlari (albom, har biri alohida varaq)
+// ?yo'q               -> barcha nazoratlar (faqat admin/branch_admin uchun)
+app.get('/api/export/tests/pdf', authRequired, (req, res) => {
+  const role = req.user.role;
+  if (!['admin', 'super_admin', 'branch_admin', 'teacher'].includes(role)) {
+    return res.status(403).json({ error: 'Ruxsat yo`q' });
+  }
+
+  const testId = Number(req.query.testId) || 0;
+  const className = String(req.query.className || '').trim();
+
+  let tests = db.store.tests.slice();
+  if (testId) tests = tests.filter((t) => t.id === testId);
+  if (className) tests = tests.filter((t) => t.className === className);
+  if (role === 'teacher') tests = tests.filter((t) => t.teacherId === req.user.teacherId);
+  if (role === 'branch_admin') {
+    const ownTeacherIds = new Set(db.store.teachers.filter((t) => t.branch_id === req.user.branch_id).map((t) => t.id));
+    tests = tests.filter((t) => ownTeacherIds.has(t.teacherId));
+  }
+  if (testId && !tests.length) return res.status(404).json({ error: 'Nazorat topilmadi' });
+  if (!tests.length) return res.status(400).json({ error: 'Nazoratlar topilmadi' });
+  tests.sort((a, b) => a.className.localeCompare(b.className) || b.date.localeCompare(a.date));
+
+  const pickFont = (candidates) => candidates.find((f) => fs.existsSync(f)) || null;
+  const REG_FONT = pickFont([
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+    'C:/Windows/Fonts/arial.ttf',
+    'C:/Windows/Fonts/times.ttf',
+  ]);
+  const BOLD_FONT = pickFont([
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+    'C:/Windows/Fonts/arialbd.ttf',
+    'C:/Windows/Fonts/timesbd.ttf',
+  ]);
+
+  const PDFDocument = require('pdfkit');
+  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 40, bufferPages: true, info: { Title: 'Nazorat ishi natijalari — OLIMP-LIDER' } });
+
+  const firstTitle = tests.length === 1 ? tests[0].title : 'Nazorat ishlari to`plami';
+  const safe = (s) => String(s || '').replace(/[^\w\d-]+/g, '_').replace(/^_+|_+$/g, '') || 'nazorat';
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="Nazorat_${safe(firstTitle)}${className ? '_' + safe(className) : ''}.pdf"`);
+  doc.pipe(res);
+
+  const PW = 841.89, PH = 595.28, M = 40;
+  const UW = PW - M * 2;
+  const BOTTOM = PH - M - 26; // sahifa raqami uchun pastdan 26pt ajratiladi
+  const COLS = [
+    { key: 'idx', title: '№', w: 45, align: 'center' },
+    { key: 'name', title: "O'quvchi F.I.Sh.", w: 476.89 },
+    { key: 'ball', title: 'Ball', w: 120, align: 'center' },
+    { key: 'pct', title: 'Foiz', w: 120, align: 'center' },
+  ];
+  const ROW_H = 20, HEAD_H = 22;
+  const fmtDate = (d) => { const p = String(d || '').split('-'); return p.length === 3 ? `${p[2]}.${p[1]}.${p[0]}` : String(d || ''); };
+
+  const drawHead = (y) => {
+    let x = M;
+    for (const c of COLS) {
+      doc.rect(x, y, c.w, HEAD_H).fillAndStroke('#DCE6F1', '#8A9BAE');
+      doc.fillColor('#000').font(BOLD_FONT || REG_FONT).fontSize(10)
+        .text(c.title, x + 4, y + 6, { width: c.w - 8, align: c.align || 'left' });
+      x += c.w;
+    }
+    return y + HEAD_H;
+  };
+
+  const drawRow = (y, cells, alt) => {
+    let x = M;
+    for (const c of COLS) {
+      doc.rect(x, y, c.w, ROW_H).fillAndStroke(alt ? '#F5F7FA' : '#FFFFFF', '#B7C0CC');
+      doc.fillColor('#111').font(REG_FONT).fontSize(10)
+        .text(String(cells[c.key] ?? ''), x + 4, y + 5.5, { width: c.w - 8, align: c.align || 'left', ellipsis: true, truncate: c.w - 8 });
+      x += c.w;
+    }
+    return y + ROW_H;
+  };
+
+  const drawTestHeader = (t, studentCount, continuation) => {
+    let y = M;
+    if (continuation) {
+      doc.font(BOLD_FONT || REG_FONT).fontSize(10).fillColor('#333')
+        .text(`${t.title} — ${t.className} sinf (davomi)`, M, y, { width: UW, align: 'center' });
+      y += 16;
+    } else {
+      doc.font(BOLD_FONT || REG_FONT).fontSize(15).fillColor('#000')
+        .text('OLIMP-LIDER MAXSUS HARBIY SPORT KLUBI', M, y, { width: UW, align: 'center' });
+      y += 21;
+      doc.fontSize(12).text(`«${t.title}» — nazorat ishi natijalari`, M, y, { width: UW, align: 'center' });
+      y += 17;
+      doc.font(REG_FONT).fontSize(10).fillColor('#444')
+        .text(`${t.className} sinf • ${t.subject} fan • ${fmtDate(t.date)} • maksimal ${t.maxScore} ball • o'quvchilar: ${studentCount}`, M, y, { width: UW, align: 'center' });
+      y += 22;
+    }
+    doc.fillColor('#000');
+    return y;
+  };
+
+  const drawStatsAndSign = (t, stats) => {
+    let y = doc.y + 16;
+    if (y + 78 > BOTTOM) {
+      doc.addPage();
+      y = M;
+    }
+    doc.font(REG_FONT).fontSize(10).fillColor('#222');
+    doc.text(
+      `Statistika: o'rtacha ball — ${stats.avg} • eng yuqori — ${stats.max} • eng pasti — ${stats.min} • natija kiritilgan — ${stats.entered}/${stats.total}`,
+      M, y, { width: UW }
+    );
+    y += 30;
+    const teacher = t.teacherId ? db.store.teachers.find((x) => x.id === t.teacherId) : null;
+    doc.font(BOLD_FONT || REG_FONT).fontSize(10).fillColor('#000');
+    doc.text(`O'qituvchi: ${teacher ? teacher.fullName : ''}  __________________________`, M, y, { width: UW / 2 });
+    doc.text('Sinf rahbari:  __________________________', M + UW / 2, y, { width: UW / 2 });
+    y += 24;
+    doc.font(REG_FONT).fontSize(9).fillColor('#666')
+      .text(`Sana: ${new Date().toLocaleDateString('uz-UZ')}    |    OLIMP-LIDER nazorat ishi hisoboti`, M, y, { width: UW });
+    doc.fillColor('#000');
+  };
+
+  for (let ti = 0; ti < tests.length; ti++) {
+    const t = tests[ti];
+    if (ti > 0) doc.addPage();
+
+    const students = db.store.students
+      .filter((s) => s.className === t.className)
+      .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName));
+    const resultMap = {};
+    (Array.isArray(t.results) ? t.results : []).forEach((r) => { resultMap[r.studentId] = Number(r.score) || 0; });
+
+    let scores = [];
+    students.forEach((s) => { if (resultMap[s.id] !== undefined) scores.push(resultMap[s.id]); });
+    const entered = scores.length;
+    const stats = {
+      total: students.length,
+      entered,
+      avg: entered ? (scores.reduce((a, b) => a + b, 0) / entered).toFixed(1) : '—',
+      max: entered ? Math.max(...scores) : '—',
+      min: entered ? Math.min(...scores) : '—',
+    };
+
+    let y = drawTestHeader(t, students.length, false);
+    y = drawHead(y);
+
+    students.forEach((s, i) => {
+      if (y + ROW_H > BOTTOM) {
+        doc.addPage();
+        y = drawTestHeader(t, students.length, true);
+        y = drawHead(y);
+      }
+      const has = resultMap[s.id] !== undefined;
+      const score = has ? resultMap[s.id] : null;
+      const pct = has && t.maxScore ? Math.round((score / t.maxScore) * 100) + '%' : '—';
+      y = drawRow(y, {
+        idx: i + 1,
+        name: `${s.lastName} ${s.firstName}`.trim(),
+        ball: has ? String(score) : '—',
+        pct,
+      }, i % 2 === 1);
+    });
+
+    drawStatsAndSign(t, stats);
+  }
+
+  // Sahifa raqamlari
+  const range = doc.bufferedPageRange();
+  for (let i = range.start; i < range.start + range.count; i++) {
+    doc.switchToPage(i);
+    doc.font(REG_FONT).fontSize(9).fillColor('#888')
+      .text(`OLIMP-LIDER  •  sahifa ${i - range.start + 1} / ${range.count}`, M, PH - M - 14, { width: UW, align: 'center' });
+  }
+  doc.fillColor('#000');
+  doc.end();
 });
 
 app.post('/api/students/:id/photo', authRequired, adminOnly, upload.single('photo'), (req, res) => {
@@ -2133,6 +2585,42 @@ app.post('/api/payments/toggle', authRequired, adminOnly, (req, res) => {
 
   db.saveCollection('payments');
   res.json({ ok: true });
+});
+
+// Ko'p o'quvchining to'lovini BITTA so'rovda belgilash (ommaviy)
+app.post('/api/payments/bulk', authRequired, adminOnly, (req, res) => {
+  const { studentIds, month, year, paid } = req.body || {};
+  const m = Number(month);
+  const y = Number(year);
+  if (!Array.isArray(studentIds) || !studentIds.length) return res.status(400).json({ error: 'O`quvchilar tanlanmagan' });
+  if (!m || m < 1 || m > 12 || !y) return res.status(400).json({ error: 'Oy yoki yil noto`g`ri' });
+
+  const allowed = req.user.role === 'branch_admin'
+    ? new Set(db.store.students.filter((s) => s.branch_id === req.user.branch_id).map((s) => s.id))
+    : new Set(db.store.students.map((s) => s.id));
+
+  const ids = [...new Set(studentIds.map(Number).filter((id) => allowed.has(id)))];
+  if (!ids.length) return res.status(400).json({ error: 'Bu o`quvchilarga ruxsat yo`q' });
+
+  const isPaid = paid === true || paid === 'true';
+  const now = new Date().toISOString();
+  for (const id of ids) {
+    const existing = db.store.payments.find((p) => p.studentId === id && Number(p.month) === m && Number(p.year) === y);
+    if (isPaid) {
+      if (existing) {
+        existing.paid = true;
+        existing.paidAt = existing.paidAt || now;
+      } else {
+        db.store.payments.push({ id: db.nextId('payments'), studentId: id, month: m, year: y, paid: true, paidAt: now });
+      }
+    } else if (existing) {
+      existing.paid = false;
+      existing.paidAt = null;
+    }
+  }
+
+  db.saveCollection('payments');
+  res.json({ ok: true, updated: ids.length, paid: isPaid });
 });
 
 // ---------- Davomat ----------

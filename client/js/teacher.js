@@ -483,6 +483,7 @@
 
     topbarActions.innerHTML = `<div class="toolbar">
       <button class="btn btn-primary" onclick="window.appNewTest()">+ Yangi nazorat</button>
+      <button class="btn btn-outline" onclick="window.appExportTestsPdf()">📄 PDF (albom)</button>
     </div>`;
 
     if (!tests.length) {
@@ -499,6 +500,7 @@
           <span class="badge badge-green">${t.resultsCount} o'quvchi</span>
           <div style="margin-left:auto;display:flex;gap:8px">
             <button class="btn btn-outline btn-sm" onclick="window.appFillTest(${t.id})">Natijalar</button>
+            <button class="btn btn-outline btn-sm" onclick="window.appTestPdf(${t.id})">📄 PDF</button>
             <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="window.appDelTest(${t.id})">O'chirish</button>
           </div>
         </div>
@@ -657,6 +659,24 @@
   window.appNewTest = () => newTestModal();
   window.appFillTest = (id) => fillTestModal(id);
   window.appDelTest = (id) => deleteTest(id);
+  window.appTestPdf = async (id) => {
+    toast('PDF tayyorlanmoqda...');
+    try {
+      await API.download('/api/export/tests/pdf?testId=' + id, 'nazorat_' + id + '.pdf');
+      toast('PDF fayl yuklab olindi');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
+  window.appExportTestsPdf = async () => {
+    toast('PDF albom tayyorlanmoqda...');
+    try {
+      await API.download('/api/export/tests/pdf', 'nazoratlar.pdf');
+      toast('PDF albom yuklab olindi');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
   window.appExportGrades = async () => {
     if (!_jCurrent) {
       toast('Avval sinf va fanni tanlang', 'error');

@@ -1,23 +1,12 @@
-const CACHE_NAME = 'olimp-lider-v2';
+const CACHE_NAME = 'olimp-lider-v7';
+// FAQAT o'zgarmaydigan og'ir fayllar (rasm/manifest) keshga oldindan olinadi.
+// JS/CSS ataylab ro'yxatda yo'q: ular network-first bilan olinadi, aks holda
+// yangi kod hech qachon foydalanuvchiga yetib bormaydi.
 const STATIC_ASSETS = [
-  '/',
-  '/css/style.css',
-  '/js/admin.js',
-  '/js/teacher.js',
-  '/js/parent.js',
-  '/js/doctor.js',
-  '/js/api.js',
-  '/js/chat.js',
   '/assets/logo.png',
   '/assets/banner.jpg',
   '/manifest.json'
 ];
-
-const CACHE_STRATEGIES = {
-  static: 'cache-first',
-  api: 'network-first',
-  images: 'cache-first'
-};
 
 // Install event - cache static assets
 self.addEventListener('install', (event) => {
@@ -60,27 +49,28 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(networkFirstStrategy(event.request));
     return;
   }
-  
-  // Static assets - cache first
-  if (urlPath.startsWith('/assets/') || 
-      urlPath.startsWith('/css/') || 
-      urlPath.startsWith('/js/') ||
-      urlPath.endsWith('.png') || 
+
+  // JS/CSS/HTML — network-first: yangilangan kod darhol yetib boradi.
+  // Tarmoq bo'lmasa keshdan beriladi (offline rejim).
+  if (urlPath.startsWith('/js/') || urlPath.startsWith('/css/') ||
+      urlPath === '/' || urlPath.endsWith('.html') ||
+      event.request.mode === 'navigate') {
+    event.respondWith(networkFirstStrategy(event.request));
+    return;
+  }
+
+  // Rasmlar - cache first (o'zgarmaydi, tez yuklanadi)
+  if (urlPath.startsWith('/assets/') ||
+      urlPath.endsWith('.png') ||
       urlPath.endsWith('.jpg') ||
-      urlPath.endsWith('.jpg') ||
+      urlPath.endsWith('.jpeg') ||
       urlPath.endsWith('.ico') ||
       urlPath.endsWith('.woff2') ||
       urlPath.endsWith('.woff')) {
     event.respondWith(cacheFirstStrategy(event.request));
     return;
   }
-  
-  // HTML pages - network first, fallback to cache
-  if (event.request.mode === 'navigate') {
-    event.respondWith(networkFirstStrategy(event.request));
-    return;
-  }
-  
+
   // Default: network first
   event.respondWith(networkFirstStrategy(event.request));
 });
@@ -91,7 +81,7 @@ async function networkFirstStrategy(request) {
     const networkResponse = await fetch(request);
     if (networkResponse.ok) {
       const cache = await caches.open(CACHE_NAME);
-      cache.put(event.request, networkResponse.clone());
+      cache.put(request, networkResponse.clone());
     }
     return networkResponse;
   } catch (error) {
@@ -99,7 +89,7 @@ async function networkFirstStrategy(request) {
     if (cachedResponse) return cachedResponse;
     // Return offline page for navigation requests
     if (request.mode === 'navigate') {
-      return caches.match('/') || new Response('Offline', { status: 503 });
+      return (await caches.match('/')) || new Response('Offline', { status: 503 });
     }
     throw error;
   }
