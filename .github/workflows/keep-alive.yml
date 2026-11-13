@@ -9,7 +9,15 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Saytni uyg'otish (asosiy sahifa)
-        run: curl -fsS --max-time 300 -o /dev/null https://olimplider.onrender.com/
+      # Oracle Cloud Always Free instance must NOT look idle to Oracle.
+      # Oracle reclaims Always Free compute when, over 7 days, CPU < 20%
+      # AND network < 20%. The old workflow pinged olimplider.onrender.com
+      # (an abandoned Render host), so the real Oracle instance received no
+      # traffic and was reclaimed by the provider.
+      # Now we ping the real host: olimplider.uz -> Oracle 130.61.215.247
+      - name: Oracle server / saytni uyg'otish
+        run: curl -fsS --max-time 60 -o /dev/null https://olimplider.uz/
       - name: API'ni tekshirish
-        run: curl -fsS --max-time 300 -o /dev/null https://olimplider.onrender.com/api/settings
+        run: curl -fsS --max-time 60 -o /dev/null https://olimplider.uz/api/settings
+      - name: SSH porti ochiqligini tekshirish
+        run: (echo > /dev/tcp/130.61.215.247/22) && echo "SSH ochiq" || echo "SSH yopiq"
