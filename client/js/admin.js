@@ -497,7 +497,7 @@
     return `<div class="form-group full"><label>Filial *</label><select id="${idName}">${opts}</select></div>`;
   }
 
-  async function studentModal(student = null, prefillClass = '') {
+  async function studentModal(student = null, prefillClass = '', prefillBranch = null) {
     const s = student || {};
     const isEdit = !!student;
     const fee = s.monthlyFee || '';
@@ -507,7 +507,7 @@
     const autoUser = genUsername(s.lastName || '', s.firstName || '');
     const autoPass = genPassword();
     // Super admin uchun filial tanlovi (o'quvchi ko'chirilishi ham mumkin)
-    const branchHtml = await branchSelectHtml(s.branch_id, 'fBranch');
+    const branchHtml = await branchSelectHtml(s.branch_id !== undefined && s.branch_id !== null ? s.branch_id : prefillBranch, 'fBranch');
 
     showModal(`
       <div class="modal-header"><h3>${isEdit ? 'O\'quvchini tahrirlash' : 'Yangi o\'quvchi qo\'shish'}</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
@@ -595,7 +595,8 @@
         if (more) {
           closeModal();
           toast('O\'quvchi qo\'shildi');
-          studentModal(null, body.className);
+          const brEl = document.getElementById('fBranch');
+          studentModal(null, body.className, brEl ? Number(brEl.value) : (body.branch_id || null));
         } else {          closeModal();
           if (!isEdit && result.parentUsername) {
             showCredentialsModal(result);
