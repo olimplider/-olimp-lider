@@ -1,6 +1,6 @@
 /* ============================================================
-   OLIMP-LIDER v6 — Qora premium + oltin (CIA/MI6 uslubi)
-   Shisha (glassmorphism) uslubi — qora-premium, oltin akzentlar,
+   OLIMP-LIDER v6 вЂ” Qora premium + oltin (CIA/MI6 uslubi)
+   Shisha (glassmorphism) uslubi вЂ” qora-premium, oltin akzentlar,
    yonli ikonlar, yonli kartalar.
    ============================================================ */
 
@@ -123,7 +123,7 @@ body {
   outline-offset: 2px;
 }
 
-/* Modal close button — 44x44px minimum touch target */
+/* Modal close button вЂ” 44x44px minimum touch target */
 .modal-close {
   position: absolute;
   top: 12px;
@@ -229,7 +229,7 @@ html {
   
   .login-card { padding: 28px 22px; border-radius: 20px; }
   .insignia { width: 170px; height: 170px; }
-  .insignia .logo-img { width: 156px; height: 156px; }
+  .insignia .logo-img { width: 135px; height: 156px; }
   
   /* Jurnal mobile */
   .journal .jname { min-width: 118px; padding: 8px 8px; font-size: 12px; }
@@ -329,7 +329,7 @@ html {
   position: relative;
   z-index: 2;
   background: rgba(13, 17, 12, 0.42);
-  backdrop-filter: blur(20px) saturate(110%);
+  backdrop-filter: blur(14px) saturate(110%);
   border: 1px solid rgba(212, 175, 55, 0.45);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 30px 70px rgba(0, 0, 0, 0.55);
   border-radius: 26px;
@@ -344,74 +344,87 @@ html {
   to { opacity: 1; transform: none; }
 }
 
+/* ============ NISHON (LOGO) вЂ” "yorug'lik nuri" konsepsiyasi ============
+   Aylanuvchi halqalar olib tashlandi (ular og'ir filter/conic-gradient
+   repaint qilardi). Endi: HUD burchaklari + bir marta o'tadigan yorug'lik
+   yoyi + 3D egilish. Faqat transform/opacity вЂ” GPU tez. */
 .insignia {
   position: relative;
-  width: 226px;
-  height: 226px;
+  width: 232px;
+  height: 232px;
   margin: 0 auto 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  perspective: 1000px;
+  perspective: 900px;
+  transform-style: preserve-3d;
+  isolation: isolate;
 }
+
+/* --- HUD burchaklari (harbiy ramka, halqa emas) --- */
+.insignia__brackets {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  animation: badgeBreath 5.5s ease-in-out infinite;
+}
+.insignia__brackets .bk {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border: 2px solid rgba(212, 175, 55, 0.72);
+}
+.insignia__brackets .bk-tl { top: 0; left: 0; border-right: 0; border-bottom: 0; border-top-left-radius: 14px; }
+.insignia__brackets .bk-tr { top: 0; right: 0; border-left: 0; border-bottom: 0; border-top-right-radius: 14px; }
+.insignia__brackets .bk-bl { bottom: 0; left: 0; border-right: 0; border-top: 0; border-bottom-left-radius: 14px; }
+.insignia__brackets .bk-br { bottom: 0; right: 0; border-left: 0; border-top: 0; border-bottom-right-radius: 14px; }
+@keyframes badgeBreath {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.035); }
+}
+
+/* --- Yorug'lik yoyi: metall nishon kabi yorug'lik o'tadi --- */
+.insignia__gloss {
+  position: absolute;
+  top: -14%;
+  left: -60%;
+  width: 46%;
+  height: 128%;
+  z-index: 4;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.06) 35%,
+    rgba(255, 246, 214, 0.34) 50%,
+    rgba(255, 255, 255, 0.06) 65%,
+    transparent 100%
+  );
+  transform: skewX(-14deg) translateX(0);
+  animation: glossSweep 6.5s cubic-bezier(0.5, 0, 0.3, 1) infinite;
+  will-change: transform, opacity;
+}
+@keyframes glossSweep {
+  0% { transform: skewX(-14deg) translateX(-40%); opacity: 0; }
+  12% { opacity: 1; }
+  48% { transform: skewX(-14deg) translateX(320%); opacity: 1; }
+  60% { opacity: 0; }
+  100% { transform: skewX(-14deg) translateX(320%); opacity: 0; }
+}
+
 .insignia .logo-img {
-  width: 208px;
-  height: 208px;
+  width: 186px;
+  height: 215px;
   object-fit: contain;
   position: relative;
   z-index: 2;
   transform-style: preserve-3d;
-  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.55));
-  animation: logoPulse 3s ease-in-out infinite;
+  transform: translateZ(0);
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.6));
+  transition: transform 0.35s var(--ease);
+  will-change: transform;
 }
-@keyframes logoPulse {
-  0%   { transform: scale(1); filter: drop-shadow(0 0 4px rgba(212, 175, 55, 0.45)); }
-  50%  { transform: rotate(5deg) scale(1.06); filter: drop-shadow(0 0 16px rgba(212, 175, 55, 0.8)); }
-  100% { transform: rotate(0deg); filter: drop-shadow(0 0 4px rgba(212, 175, 55, 0.45)); }
-}
-.insignia::before {
-  content: "";
-  position: absolute;
-  inset: 2px;
-  border-radius: 50%;
-  border: 2px solid rgba(212, 175, 55, 0.55);
-  box-shadow: inset 0 0 26px rgba(212, 175, 55, 0.18);
-  animation: ringPulse 6s ease-in-out infinite;
-}
-@keyframes ringPulse {
-  0%, 100% { transform: rotate(0deg); opacity: 0.6; }
-  50% { transform: rotate(180deg); opacity: 1; }
-}
-.insignia::after {
-  content: "";
-  position: absolute;
-  inset: 12px;
-  border-radius: 50%;
-  border: 2px dashed rgba(212, 175, 55, 0.45);
-  animation: spinInner 20s linear infinite;
-}
-@keyframes spinInner {
-  0%   { transform: rotate(0deg); opacity: 0.5; }
-  50%  { transform: rotate(180deg); opacity: 0.8; }
-  100% { transform: rotate(360deg); opacity: 0.5; }
-}
-
-.radar {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  overflow: hidden;
-  pointer-events: none;
-}
-.radar::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: conic-gradient(from 0deg, rgba(212, 175, 55, 0.4), transparent 28%);
-  animation: radarSweep 2.8s linear infinite;
-}
-@keyframes radarSweep { to { transform: rotate(360deg); } }
-
 .login-card h1, .welcome-title {
   font-size: clamp(21px, 4.6vw, 33px);
   line-height: 1.28;
@@ -731,10 +744,9 @@ select option { background: #141a12; color: var(--text); }
   gap: 14px;
   position: relative;
   overflow: hidden;
+  transform-style: preserve-3d;
   transition: transform 0.28s var(--ease), box-shadow 0.28s var(--ease), border-color 0.28s var(--ease);
   animation: cardUp 0.45s var(--ease);
-  backdrop-filter: blur(8px) saturate(110%);
-  -webkit-backdrop-filter: blur(8px) saturate(110%);
 }
 .stat-card:hover { transform: translateY(-4px); border-color: rgba(212, 175, 55, 0.55); box-shadow: var(--shadow-lg); }
 @keyframes cardUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
@@ -775,8 +787,8 @@ select option { background: #141a12; color: var(--text); }
   overflow: hidden;
   animation: cardUp 0.4s var(--ease);
   transition: transform 0.3s var(--ease), border-color 0.3s var(--ease), box-shadow 0.3s var(--ease);
-  backdrop-filter: blur(16px) saturate(110%);
-  -webkit-backdrop-filter: blur(16px) saturate(110%);
+  /* backdrop-filter olib tashlandi: har bir panel GPU yukini olardi.
+     Fon allaqachon quyuq gradient — blur ko'rinmasligi uchun kerak emas. */
   /* Ensure visibility on mobile */
   opacity: 1;
   visibility: visible;
@@ -1025,7 +1037,7 @@ input::placeholder { color: #5d6352; }
 .pay-status.ok { color: #9ce08f; }
 .pay-status.no { color: #f59588; }
 
-/* To'lanmagan — aniq qizil nishon + butun qator foni */
+/* To'lanmagan вЂ” aniq qizil nishon + butun qator foni */
 .pay-status.badge-no {
   display: inline-block; padding: 4px 11px; border-radius: 999px;
   background: rgba(220, 38, 38, .22); border: 1px solid rgba(220, 38, 38, .6);
@@ -1276,7 +1288,7 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
 
 .hint:empty { display: none; }
 
-/* disabled holat — ko'rinib tursin */
+/* disabled holat вЂ” ko'rinib tursin */
 .btn:disabled, .btn[disabled] {
   opacity: .42; cursor: not-allowed; transform: none !important;
   box-shadow: none !important; filter: grayscale(.55);
@@ -1774,7 +1786,7 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
 
   .login-card { padding: 28px 22px; border-radius: 20px; }
   .insignia { width: 170px; height: 170px; }
-  .insignia .logo-img { width: 156px; height: 156px; }
+  .insignia .logo-img { width: 135px; height: 156px; }
 
   .journal .jname { min-width: 118px; padding: 8px 8px; font-size: 12px; }
   .journal .jhead { min-width: 30px; padding: 6px 1px; font-size: 10px; }
@@ -1824,4 +1836,82 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
   /* Ensure panels visible on mobile */
   .panel { opacity: 1 !important; visibility: visible !important; }
   .stat-card { opacity: 1 !important; visibility: visible !important; display: flex !important; }
+}
+
+
+/* ============================================================
+   3D EFEKTLAR — chuqurlik, tez va xavfsiz
+   Faqat transform/opacity (GPU tez), filter emas.
+   ============================================================ */
+
+/* Nishon ustida yengil 3D ko'tarilish */
+.insignia:hover .logo-img {
+  transform: translateZ(18px) scale(1.02);
+}
+
+/* Kartalar 3D da chuqurlashadi */
+.stat-card:hover {
+  transform: translateY(-4px) rotateX(2.2deg) scale(1.012);
+  box-shadow: 0 18px 38px -14px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(212, 175, 55, 0.22);
+  border-color: rgba(212, 175, 55, 0.38);
+}
+.panel:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow), 0 0 0 1px rgba(212, 175, 55, 0.14);
+}
+
+/* Tugmalar bosilganda "bosilgan" 3D holat */
+.btn {
+  transform-style: preserve-3d;
+  transition: transform 0.16s var(--ease), box-shadow 0.16s var(--ease), background 0.16s var(--ease);
+}
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(1px) scale(0.985); }
+
+/* Jadval qatorlari — yengil ko'tarilish */
+.table-wrap tbody tr {
+  transition: background 0.18s var(--ease), transform 0.18s var(--ease);
+}
+.table-wrap tbody tr:hover {
+  background: rgba(212, 175, 55, 0.06);
+  transform: translateX(2px);
+}
+
+/* Kirish kartasi — 3D kirish */
+.login-card {
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+@keyframes cardIn {
+  from { opacity: 0; transform: perspective(1100px) rotateX(7deg) translateY(26px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Modal — 3D ochilish */
+.modal-overlay.open .modal {
+  animation: modalIn3d 0.32s var(--ease);
+}
+@keyframes modalIn3d {
+  from { opacity: 0; transform: perspective(900px) rotateX(-6deg) translateY(18px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ============================================================
+   HARAKATGA QARAMA (accessibility) + TEZLIK
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .insignia__gloss { display: none; }
+  .stat-card:hover, .panel:hover, .btn:hover { transform: none; }
+}
+
+/* Kichik ekranlarda 3D kamaytiriladi (tezlik uchun) */
+@media (max-width: 640px) {
+  .stat-card:hover { transform: translateY(-2px); }
+  .insignia__gloss { animation-duration: 9s; }
 }

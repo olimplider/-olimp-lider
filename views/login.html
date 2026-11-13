@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#0e130e">
   <title>OLIMP-LIDER — Kirish</title>
-  <link rel="icon" type="image/png" href="/assets/logo.png">
-  <link rel="apple-touch-icon" href="/assets/logo.png">
+  <link rel="icon" type="image/png" href="/assets/logo-emblem.png">
+  <link rel="apple-touch-icon" href="/assets/logo-emblem.png">
   <link rel="manifest" href="/manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -83,9 +83,12 @@
 <body>
   <div class="login-page">
     <div class="login-card">
-      <div class="insignia">
-        <div class="radar"></div>
-        <img src="/assets/logo.png" class="logo-img" alt="OLIMP-LIDER logotipi">
+      <div class="insignia" id="insignia">
+        <span class="insignia__brackets" aria-hidden="true">
+          <i class="bk bk-tl"></i><i class="bk bk-tr"></i><i class="bk bk-bl"></i><i class="bk bk-br"></i>
+        </span>
+        <span class="insignia__gloss" aria-hidden="true"></span>
+        <img src="/assets/logo-emblem.png" class="logo-img" alt="OLIMP-LIDER logotipi">
       </div>
       <h1 class="welcome-title">OLIMP-LIDER MAXSUS SPORT KLUBI SAYTIGA XUSH KELIBSIZ</h1>
       <div id="errorBox" class="alert-error"></div>
@@ -168,6 +171,44 @@
         btn.textContent = 'Kirish';
       }
     });
+  </script>
+  <script>
+    // ---------- 3D EGILISH ----------
+    // Sichqoncha harakatiga qarab nishon va karta chuqurlikda buriladi.
+    // Faqat transform — GPU tez. Mobil/qisqartirilgan rejimda o'chadi.
+    (function () {
+      const card = document.querySelector('.login-card');
+      const insignia = document.getElementById('insignia');
+      if (!card || !insignia) return;
+      if (!window.matchMedia('(pointer: fine)').matches) return;
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+      let raf = null;
+      let idle = null;
+
+      function apply(rx, ry, tz) {
+        card.style.transform = 'perspective(1100px) rotateX(' + rx + 'deg) rotateY(' + ry + 'deg)';
+        insignia.style.transform = 'rotateX(' + rx * 1.6 + 'deg) rotateY(' + ry * 1.8 + 'deg) translateZ(' + tz + 'px)';
+      }
+      function reset() {
+        card.style.transform = '';
+        insignia.style.transform = '';
+      }
+
+      card.addEventListener('pointermove', (e) => {
+        const r = card.getBoundingClientRect();
+        const x = (e.clientX - r.left) / r.width - 0.5;
+        const y = (e.clientY - r.top) / r.height - 0.5;
+        if (raf) cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(() => apply((-y * 7).toFixed(2), (x * 9).toFixed(2), 30));
+      });
+
+      card.addEventListener('pointerleave', () => {
+        if (raf) cancelAnimationFrame(raf);
+        if (idle) clearTimeout(idle);
+        idle = setTimeout(reset, 260);
+      });
+    })();
   </script>
   <script>
     if ('serviceWorker' in navigator) {
