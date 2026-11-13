@@ -476,7 +476,28 @@
     return base;
   }
 
-  function studentModal(student = null, prefillClass = '') {
+  // ---------- FILIAL YORDAMCHILARI ----------
+  // Super admin yangi yozuv qo'shda filialni tanlashi kerak
+  let branchesCache = null;
+  async function getBranches() {
+    if (!branchesCache) {
+      try { branchesCache = await API.get('/api/branches'); } catch (e) { branchesCache = []; }
+    }
+    return branchesCache;
+  }
+  function invalidateBranches() { branchesCache = null; }
+  const isSuperRole = () => role === 'super_admin' || role === 'admin';
+
+  // Tanlov maydoni (faqat super admin uchun, ko'p filial bo'lsa)
+  async function branchSelectHtml(currentId, idName) {
+    if (!isSuperRole()) return '';
+    const list = await getBranches();
+    if (list.length < 2) return '';
+    const opts = list.map((b) => `<option value="${b.id}" ${Number(currentId) === Number(b.id) ? ' selected' : ''}>${escapeHtml(b.name)}</option>`).join('');
+    return `<div class="form-group full"><label>Filial *</label><select id="${idName}">${opts}</select></div>`;
+  }
+
+  async function studentModal(student = null, prefillClass = '') {
     const s = student || {};
     const isEdit = !!student;
     const fee = s.monthlyFee || '';
@@ -485,6 +506,8 @@
     const classOptions = existingClasses.map((c) => `<option value="${escapeHtml(c)}"></option>`).join('');
     const autoUser = genUsername(s.lastName || '', s.firstName || '');
     const autoPass = genPassword();
+    // Super admin uchun filial tanlovi (o'quvchi ko'chirilishi ham mumkin)
+    const branchHtml = await branchSelectHtml(s.branch_id, 'fBranch');
 
     showModal(`
       <div class="modal-header"><h3>${isEdit ? 'O\'quvchini tahrirlash' : 'Yangi o\'quvchi qo\'shish'}</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
@@ -506,6 +529,7 @@
           <div class="form-group full"><label>Manzil</label><input id="fAddress" value="${escapeHtml(s.address)}"></div>
           <div class="form-group"><label>Ota-onaning ismi</label><input id="fParentName" value="${escapeHtml(s.parentName)}"></div>
           <div class="form-group"><label>Ota-ona telefoni</label><input id="fParentPhone" value="${escapeHtml(s.parentPhone)}" placeholder="+998 90 123 45 67"></div>
+          ${branchHtml}
         </div>
         ${!isEdit ? `<div class="hint">Ota-ona kirishi AVTOMAT yaratiladi. Ular shu login va parol orqali farzandini masofadan kuzatadi. Kerak bo'lsa o'zgartirishingiz mumkin:</div>
         <div class="form-grid">
@@ -550,6 +574,8 @@
           parentPhone: document.getElementById('fParentPhone').value,
         };
         let result;
+        const branchEl = document.getElementById('fBranch');
+        if (branchEl) body.branch_id = Number(branchEl.value);
         if (isEdit) {
           result = await API.put('/api/students/' + s.id, body);
         } else {
@@ -570,8 +596,7 @@
           closeModal();
           toast('O\'quvchi qo\'shildi');
           studentModal(null, body.className);
-        } else {
-          closeModal();
+        } else {          closeModal();
           if (!isEdit && result.parentUsername) {
             showCredentialsModal(result);
           } else {
@@ -1546,6 +1571,7 @@ initContact('contactTop');
     content.innerHTML = '<div class="empty-state">Yuklanmoqda...</div>';
     try {
       const branches = await API.get('/api/branches');
+      invalidateBranches();
       content.innerHTML = `
         <div class="panel">
           <div class="panel-header"><h3>Filiallar boshqaruvi</h3></div>
@@ -1555,6 +1581,7 @@ initContact('contactTop');
                 <thead>
                   <tr>
                     <th>Filial nomi</th>
+                    <th>Admin</th>
                     <th>Maktab raqami</th>
                     <th>Manzil</th>
                     <th>Telefon</th>
@@ -1569,6 +1596,7 @@ initContact('contactTop');
                   ${branches.map((b) => `
                     <tr>
                       <td><strong>${escapeHtml(b.name)}</strong></td>
+                      <td>${b.admin_username ? escapeHtml(b.admin_username) : '<span class="badge badge-danger">Admin yo`q</span>'}</td>
                       <td>${escapeHtml(b.school_number || '-')}</td>
                       <td>${escapeHtml(b.address || '-')}</td>
                       <td>${escapeHtml(b.phone || '-')}</td>
@@ -1577,6 +1605,7 @@ initContact('contactTop');
                       <td>${b.doctor_count}</td>
                       <td><span class="badge badge-${b.is_active ? 'success' : 'danger'}">${b.is_active ? 'Faol' : "No'faol"}</span></td>
                       <td>
+                        <button class="btn btn-sm btn-outline" onclick="window.appBranchStats(${b.id})">Statistika</button>
                         <button class="btn btn-sm btn-outline" onclick="window.appEditBranch(${b.id})">Tahrirlash</button>
                         ${b.student_count === 0 && b.teacher_count === 0 && b.doctor_count === 0 ? `<button class="btn btn-sm btn-outline" style="color:var(--danger)" onclick="window.appDeleteBranch(${b.id})">O'chirish</button>` : '<span class="muted">—</span>'}
                       </td>
@@ -1597,6 +1626,12 @@ initContact('contactTop');
             <div class="form-group"><label>Maktab raqami</label><input id="nbNumber" placeholder="168"></div>
             <div class="form-group"><label>Manzil</label><input id="nbAddress" placeholder="Manzil"></div>
             <div class="form-group"><label>Telefon</label><input id="nbPhone" placeholder="+998 90 123 45 67"></div>
+            <div style="border-top:1px dashed var(--border, #444);padding-top:12px;margin-top:12px;">
+              <label style="font-weight:600">Filial admini *</label>
+              <small class="muted" style="display:block;margin:4px 0 8px;">Filial yaratilgach shu admin shu filialga biriktiriladi va faqat o'z filialini boshqaradi.</small>
+              <input id="nbAdminLogin" placeholder="Login (masalan: chilonzor232)" style="margin-bottom:8px;width:100%;">
+              <input id="nbAdminPass" placeholder="Parol (kamida 4 belgi)" type="text" style="width:100%;">
+            </div>
           </div>
           <div class="modal-footer">
             <button class="btn btn-ghost" onclick="window.appCloseModal()">Bekor</button>
@@ -1608,13 +1643,21 @@ initContact('contactTop');
           const btn = document.getElementById('saveBranchBtn');
           btn.disabled = true;
           try {
+            const adminLogin = document.getElementById('nbAdminLogin').value.trim();
+            const adminPass = document.getElementById('nbAdminPass').value.trim();
+            if (!adminLogin || !adminPass) {
+              toast('Filial admini uchun login VA parolni kiriting', 'error');
+              btn.disabled = false;
+              return;
+            }
             await API.post('/api/branches', {
               name: document.getElementById('nbName').value.trim(),
               school_number: document.getElementById('nbNumber').value.trim(),
               address: document.getElementById('nbAddress').value.trim(),
               phone: document.getElementById('nbPhone').value.trim(),
+              admin: { username: adminLogin, password: adminPass },
             });
-            toast('Filial qo\'shildi');
+            toast('Filial va uning admini yaratildi: ' + adminLogin);
             closeModal();
             await renderBranches();
           } catch (e) {
@@ -1635,6 +1678,9 @@ initContact('contactTop');
       if (!b) return;
       const users = await API.get('/api/users');
       const admins = users.filter((u) => u.role === 'admin' || u.role === 'super_admin' || u.role === 'branch_admin');
+      // Yetim (filialsiz) filial adminlari — ularni shu filialga biriktirish mumkin
+      let orphans = [];
+      try { orphans = await API.get('/api/branches/orphan-admins'); } catch (e) { orphans = []; }
       const html = `
         <div class="modal-header"><h3>Filialni tahrirlash — ${escapeHtml(b.name)}</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
         <div class="modal-body">
@@ -1644,6 +1690,7 @@ initContact('contactTop');
           <div class="form-group"><label>Telefon</label><input id="ebPhone" value="${escapeHtml(b.phone || '')}"></div>
           <div class="form-group"><label>Holat</label><select id="ebActive"><option value="1" ${b.is_active ? 'selected' : ''}>Faol</option><option value="0" ${!b.is_active ? 'selected' : ''}>No'faol</option></select></div>
           <div class="form-group"><label>Filial admini (mavjud)</label><select id="ebAdminId"><option value="">Tanlanmagan</option>${admins.map((a) => `<option value="${a.id}" ${b.admin_id === a.id ? 'selected' : ''}>${escapeHtml(a.username)}${a.branch_name ? ' (' + escapeHtml(a.branch_name) + ')' : ''}</option>`).join('')}</select></div>
+          ${orphans.length ? `<div class="form-group"><label>Yetim filial admini (filialga biriktirish)</label><select id="ebOrphanId"><option value="">Tanlanmagan</option>${orphans.map((o) => `<option value="${o.id}">${escapeHtml(o.username)} — hozir filialsiz</option>`).join('')}</select><small class="muted" style="display:block;margin-top:6px;">Filial o'chirilganda admin yetim qolgan bo'lsa, shu yerga tanlab qayta biriktiring.</small></div>` : ''}
           <div class="form-group" style="border-top:1px dashed var(--border, #444);padding-top:12px;margin-top:12px;">
             <label>Yangi filial admini yaratish</label>
             <input id="ebNewLogin" placeholder="Login (masalan: chilonzor232)" style="margin-bottom:8px;width:100%;">
@@ -1675,13 +1722,18 @@ initContact('contactTop');
             phone: document.getElementById('ebPhone').value.trim(),
             is_active: document.getElementById('ebActive').value === '1',
           };
-          if (!newLogin) {
+          const orphanEl = document.getElementById('ebOrphanId');
+          const orphanId = orphanEl ? orphanEl.value : '';
+          if (!newLogin && !orphanId) {
             payload.admin_id = document.getElementById('ebAdminId').value ? Number(document.getElementById('ebAdminId').value) : null;
           }
           await API.put('/api/branches/' + id, payload);
           if (newLogin) {
             await API.post('/api/branches/' + id + '/admin', { username: newLogin, password: newPass });
             toast('Filial admini yaratildi: ' + newLogin);
+          } else if (orphanId) {
+            await API.post('/api/branches/' + id + '/assign-admin', { userId: Number(orphanId) });
+            toast('Filial admini biriktirildi');
           } else {
             toast('Filial saqlandi');
           }
@@ -1697,6 +1749,27 @@ initContact('contactTop');
     }
   };
 
+  window.appBranchStats = async (id) => {
+    try {
+      const s = await API.get('/api/branches/' + id + '/stats');
+      showModal(`
+        <div class="modal-header"><h3>${escapeHtml(s.name)} — statistika</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
+        <div class="modal-body">
+          <div class="tg-stat-grid">
+            <div><span>O'quvchilar</span><b>${s.student_count}</b></div>
+            <div><span>O'qituvchilar</span><b>${s.teacher_count}</b></div>
+            <div><span>Shifokorlar</span><b>${s.doctor_count}</b></div>
+            <div><span>To'lov yozuvlari</span><b>${s.payment_count}</b></div>
+            <div><span>To'langan</span><b>${s.paid_count}</b></div>
+          </div>
+          <div class="hint" style="margin-top:14px">Maktab raqami: <b>${escapeHtml(s.school_number || '—')}</b></div>
+        </div>
+        <div class="modal-footer"><button class="btn btn-primary" onclick="window.appCloseModal()">Yopish</button></div>
+      `);
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
   window.appDeleteBranch = async (id) => {
     if (!confirm("Filialni o'chirishingizga ishonchingiz komilmi?")) return;
     try {
@@ -1776,11 +1849,13 @@ initContact('contactTop');
     const classBoxes = classes.length
       ? classes.map((c) => `<label class="chip"><input type="checkbox" class="t-class" value="${escapeHtml(c)}" ${t && t.classes.includes(c) ? 'checked' : ''}> ${escapeHtml(c)}</label>`).join('')
       : '<span class="muted">Avval o\'quvchilar qo\'shilsin — sinflar shu yerda paydo bo\'ladi.</span>';
+    const branchHtml = await branchSelectHtml(t && t.branch_id, 'tBranch');
 
     showModal(`
       <div class="modal-title">${t ? "O'qituvchini tahrirlash" : "Yangi o'qituvchi"}</div>
       <div class="form-group"><label>To'liq ismi *</label><input id="tName" value="${escapeHtml((t && t.fullName) || '')}" placeholder="Masalan: Sobirov Aziz Olimovich"></div>
       <div class="form-group"><label>Lavozim</label><input id="tPosition" value="${escapeHtml((t && t.position) || '')}" placeholder="masalan: Matematika o'qituvchisi"></div>
+      ${branchHtml}
       <div class="form-group"><label>Fanlari</label><div class="chip-group">${subjBoxes}</div></div>
       <div class="form-group"><label>Sinflari</label><div class="chip-group">${classBoxes}</div></div>
       <div class="form-grid">
@@ -1823,6 +1898,8 @@ initContact('contactTop');
       const subjects = [...document.querySelectorAll('.t-subj:checked')].map((x) => x.value);
       const classesSel = [...document.querySelectorAll('.t-class:checked')].map((x) => x.value);
       const body = { fullName, position, subjects, classes: classesSel };
+      const tBranchEl = document.getElementById('tBranch');
+      if (tBranchEl) body.branch_id = Number(tBranchEl.value);
       const username = document.getElementById('tUser').value.trim();
       const password = document.getElementById('tPass').value;
       const photoFile = tPhotoInp ? tPhotoInp.files[0] : null;
@@ -1943,11 +2020,13 @@ initContact('contactTop');
   async function doctorModal(id) {
     const doctors = await API.get('/api/doctors');
     const d = id != null ? doctors.find((x) => x.id === id) : null;
+    const branchHtml = await branchSelectHtml(d && d.branch_id, 'dBranch');
 
     showModal(`
       <div class="modal-title">${d ? 'Shifokorni tahrirlash' : "Yangi shifokor"}</div>
       <div class="form-group"><label>To'liq ismi *</label><input id="dName" value="${escapeHtml((d && d.fullName) || '')}" placeholder="Masalan: Karimova Malika Davronovna"></div>
       <div class="form-group"><label>Lavozim</label><input id="dPosition" value="${escapeHtml((d && d.position) || '')}" placeholder="masalan: Tibbiy xodim"></div>
+      ${branchHtml}
       <div class="form-grid">
         <div class="form-group"><label>Rasm</label><div style="display:flex;align-items:center;gap:12px">
           <div id="dPhotoPrev">${d ? tAvatar(d) : '<span class="avatar" style="border-radius:50%">SH</span>'}</div>
@@ -1981,6 +2060,8 @@ initContact('contactTop');
       if (!fullName) return toast("Ism kiritilmagan", 'error');
       const position = document.getElementById('dPosition').value.trim();
       const body = { fullName, position };
+      const dBranchEl = document.getElementById('dBranch');
+      if (dBranchEl) body.branch_id = Number(dBranchEl.value);
       const username = document.getElementById('dUser').value.trim();
       const password = document.getElementById('dPass').value;
       const photoFile = dPhotoInp ? dPhotoInp.files[0] : null;

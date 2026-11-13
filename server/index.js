@@ -266,6 +266,73 @@ function adminOnly(req, res, next) {
   next();
 }
 
+// ---------- FILIAL IZOLYATSIYASI (multi-tenant) ----------
+// Super admin barcha filiallarni boshqaradi, filial admini faqat o'z filialini.
+// Barcha ro'yxat endpointlari shu yordamchilar orqali filtrlanadi.
+
+// Super admin (barcha filiallarni ko'radi va boshqaradi)
+function isSuperUser(req) {
+  return req.user.role === 'super_admin' || req.user.role === 'admin';
+}
+
+// Ro'yxatni foydalanuvchining filialiga qarab filtrlaydi
+function scopeByBranch(req, list) {
+  if (isSuperUser(req)) return list;
+  return (list || []).filter((r) => Number(r.branch_id) === Number(req.user.branch_id));
+}
+
+// Yozuv foydalanuvchining filialiga tegishlimi?
+function inUserBranch(req, record) {
+  if (isSuperUser(req)) return true;
+  if (!record) return false;
+  return Number(record.branch_id) === Number(req.user.branch_id);
+}
+
+// Yozuvga kirishni tekshiradi (403 qaytaradi)
+function denyUnlessInBranch(req, res, record, message) {
+  if (inUserBranch(req, record)) return true;
+  res.status(403).json({ error: message || 'Bu ma`lumot boshqa filialga tegishli' });
+  return false;
+}
+
+// Foydalanuvchining haqiqiy filiali (o'quvchi/o'qituvchi/shifokor yozuvidan)
+// — eski yozuvlarda user.branch_id bo'sh bo'lsa ham filial topiladi
+function effectiveBranchId(user) {
+  if (!user) return null;
+  if (user.branch_id !== null && user.branch_id !== undefined) return user.branch_id;
+  if (user.role === 'teacher' && user.teacherId) {
+    const t = db.store.teachers.find((x) => x.id === user.teacherId);
+    if (t && t.branch_id !== null && t.branch_id !== undefined) return t.branch_id;
+  }
+  if (user.role === 'doctor' && user.doctorId) {
+    const d = db.store.doctors.find((x) => x.id === user.doctorId);
+    if (d && d.branch_id !== null && d.branch_id !== undefined) return d.branch_id;
+  }
+  if (user.role === 'parent' && user.studentId) {
+    const s = db.store.students.find((x) => x.id === user.studentId);
+    if (s && s.branch_id !== null && s.branch_id !== undefined) return s.branch_id;
+  }
+  return null;
+}
+
+// Yangi yozuv uchun branch_id: super admin tanlaydi, filial admini o'zigil
+function resolveBranchId(req, body, required) {
+  const b = body || {};
+  if (isSuperUser(req)) {
+    const bid = Number(b.branch_id);
+    if (bid) {
+      const exists = db.store.branches.some((x) => x.id === bid);
+      if (!exists) return { error: 'Bunday filial mavjud emas' };
+      return { branchId: bid };
+    }
+    // Faqat bitta filial bo'lsa — avtomatik uni tanlaydi
+    if (db.store.branches.length === 1) return { branchId: db.store.branches[0].id };
+    if (required) return { error: 'Filialni tanlash majburiy' };
+    return { branchId: req.user.branch_id || null };
+  }
+  return { branchId: req.user.branch_id || null };
+}
+
 // ---------- Auth API ----------
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body || {};
@@ -495,6 +562,20 @@ function canClass(teacher, className) {
   return teacher && teacher.classes && teacher.classes.includes(className);
 }
 
+// O'qituvchining filiali (o'quvchi ro'yxatlari shunga qarab filtrlanadi)
+function teacherBranchId(req, teacher) {
+  if (teacher && teacher.branch_id !== undefined && teacher.branch_id !== null) return teacher.branch_id;
+  return effectiveBranchId(req.user);
+}
+
+// O'qituvchi faqat o'z filialidagi o'quvchilarni ko'radi
+function teacherStudents(req, teacher, className) {
+  const bid = teacherBranchId(req, teacher);
+  let list = db.store.students.filter((s) => Number(s.branch_id) === Number(bid));
+  if (className) list = list.filter((s) => (s.className || '(sinsiz)') === className);
+  return list;
+}
+
 app.get('/api/teachers', authRequired, adminOnly, (req, res) => {
   let list = db.store.teachers;
   if (req.user.role !== 'super_admin' && req.user.role !== 'admin') {
@@ -539,6 +620,10 @@ app.post('/api/teachers', authRequired, adminOnly, (req, res) => {
   const fullName = String(b.fullName || '').trim();
   if (!fullName) return res.status(400).json({ error: 'To`liq ism majburiy' });
 
+  // Filial: filial admini — o'z filialiga, super admin — tanlagan filialga
+  const br = resolveBranchId(req, b, true);
+  if (br.error) return res.status(400).json({ error: br.error });
+
   const teacher = {
     id: db.nextId('teachers'),
     fullName,
@@ -546,7 +631,7 @@ app.post('/api/teachers', authRequired, adminOnly, (req, res) => {
     photo: b.photo || null,
     subjects: (Array.isArray(b.subjects) ? b.subjects : []).map((s) => String(s).trim()).filter(Boolean),
     classes: (Array.isArray(b.classes) ? b.classes : []).map((s) => String(s).trim()).filter(Boolean),
-    branch_id: req.user.branch_id || null,
+    branch_id: br.branchId || null,
     createdAt: new Date().toISOString(),
   };
   db.store.teachers.push(teacher);
@@ -564,7 +649,7 @@ app.post('/api/teachers', authRequired, adminOnly, (req, res) => {
     fullName,
     teacherId: teacher.id,
     studentId: null,
-    branch_id: req.user.branch_id || null,
+    branch_id: br.branchId || null,
   };
   db.store.users.push(user);
 
@@ -614,6 +699,7 @@ app.post('/api/teachers/:id/credentials', authRequired, adminOnly, (req, res) =>
 app.get('/api/teachers/:id/credentials', authRequired, adminOnly, (req, res) => {
   const teacher = db.store.teachers.find((t) => t.id === Number(req.params.id));
   if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+  if (!denyUnlessInBranch(req, res, teacher, 'Bu o`qituvchi boshqa filialga tegishli')) return;
   const user = db.store.users.find((u) => u.role === 'teacher' && u.teacherId === teacher.id);
   if (!user) return res.status(404).json({ error: 'Kirish yozuvi topilmadi' });
   const pw = ensureUserPassword(user);
@@ -624,6 +710,7 @@ app.get('/api/teachers/:id/credentials', authRequired, adminOnly, (req, res) => 
 app.put('/api/teachers/:id', authRequired, adminOnly, (req, res) => {
   const teacher = db.store.teachers.find((t) => t.id === Number(req.params.id));
   if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+  if (!denyUnlessInBranch(req, res, teacher, 'Bu o`qituvchi boshqa filialga tegishli')) return;
   const b = req.body || {};
   if (b.fullName !== undefined) teacher.fullName = String(b.fullName).trim();
   if (b.position !== undefined) teacher.position = String(b.position || '').trim();
@@ -645,7 +732,9 @@ app.put('/api/teachers/:id', authRequired, adminOnly, (req, res) => {
 
 app.delete('/api/teachers/:id', authRequired, adminOnly, (req, res) => {
   const id = Number(req.params.id);
-  db.store.teachers = db.store.teachers.filter((t) => t.id !== id);
+  const teacher = db.store.teachers.find((t) => t.id === id);
+  if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+  if (!denyUnlessInBranch(req, res, teacher, 'Bu o`qituvchi boshqa filialga tegishli')) return;
   db.store.users = db.store.users.filter((u) => !(u.role === 'teacher' && u.teacherId === id));
   db.store.tests = db.store.tests.filter((t) => t.teacherId !== id);
   db.store.teacher_attendance = db.store.teacher_attendance.filter((a) => a.teacherId !== id);
@@ -667,6 +756,12 @@ function branchNameById(id) {
   return b ? b.name : null;
 }
 
+// Sinf o'quvchilari (filialga qarab)
+// Export endpointlari uchun: branch_admin faqat o'z filialidan yuklab oladi
+function scopedClassStudents(req, className) {
+  return scopeByBranch(req, db.store.students).filter((s) => (s.className || '(sinsiz)') === className);
+}
+
 // Barcha filiallar ro'yxati
 app.get('/api/branches', authRequired, superAdminOnly, (req, res) => {
   const list = db.store.branches.map((b) => ({
@@ -686,13 +781,26 @@ app.get('/api/branches', authRequired, superAdminOnly, (req, res) => {
   res.json(list);
 });
 
-// Yangi filial yaratish
+// Yangi filial yaratish (+ birga filial admini)
 app.post('/api/branches', authRequired, superAdminOnly, (req, res) => {
   const b = req.body || {};
   const name = String(b.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Filial nomi majburiy' });
   const taken = db.store.branches.find((x) => x.name.toLowerCase() === name.toLowerCase());
   if (taken) return res.status(400).json({ error: 'Bu nom bilan filial allaqachon mavjud' });
+
+  // Filial admini (ixtiyoriy, lekin tavsiya etiladi) — birga yaratiladi
+  const a = b.admin || {};
+  const adminUsername = String(a.username || '').trim().toLowerCase();
+  const adminPassword = String(a.password || '');
+  const adminFullName = String(a.fullName || '').trim();
+  if (adminUsername) {
+    if (!adminPassword) return res.status(400).json({ error: 'Filial admini uchun parol kiriting' });
+    if (adminPassword.length < 4) return res.status(400).json({ error: 'Parol kamida 4 ta belgi' });
+    if (db.store.users.some((u) => u.username === adminUsername)) {
+      return res.status(400).json({ error: 'Bu login band, boshqasini tanlang' });
+    }
+  }
 
   const branch = {
     id: db.nextId('branches'),
@@ -705,8 +813,28 @@ app.post('/api/branches', authRequired, superAdminOnly, (req, res) => {
     admin_id: null,
   };
   db.store.branches.push(branch);
+
+  let admin = null;
+  if (adminUsername) {
+    admin = {
+      id: db.nextId('users'),
+      username: adminUsername,
+      passwordHash: db.hashPassword(adminPassword),
+      pwEnc: secrets.encrypt(adminPassword),
+      role: 'branch_admin',
+      fullName: adminFullName || branch.name + ' filial admini',
+      branch_id: branch.id,
+      studentId: null,
+      teacherId: null,
+      doctorId: null,
+    };
+    db.store.users.push(admin);
+    branch.admin_id = admin.id;
+  }
+
   db.saveCollection('branches');
-  res.status(201).json(branch);
+  db.saveCollection('users');
+  res.status(201).json({ ...branch, admin: admin ? { id: admin.id, username: admin.username, fullName: admin.fullName } : null });
 });
 
 // Filialni tahrirlash / admin biriktirish
@@ -728,19 +856,22 @@ app.put('/api/branches/:id', authRequired, superAdminOnly, (req, res) => {
   if (b.admin_id !== undefined) {
     const newAdminId = b.admin_id ? Number(b.admin_id) : null;
     const prevAdminId = branch.admin_id || null;
-    branch.admin_id = newAdminId;
     if (newAdminId) {
       // Tanlangan foydalanuvchi shu filialga biriktiriladi (kirishi shu filialga yo'naltiriladi)
       const adminUser = db.store.users.find((u) => u.id === newAdminId);
       if (!adminUser) return res.status(400).json({ error: 'Bunday foydalanuvchi topilmadi' });
+      branch.admin_id = newAdminId;
       adminUser.branch_id = branch.id;
       db.saveCollection('users');
-    } else if (prevAdminId && prevAdminId !== newAdminId) {
-      // Admin olib tashlansa — faqat branch_admin foydalanuvchidan filial bog'lanishini uzish
-      const prevUser = db.store.users.find((u) => u.id === prevAdminId);
-      if (prevUser && prevUser.role === 'branch_admin' && prevUser.branch_id === branch.id) {
-        prevUser.branch_id = null;
-        db.saveCollection('users');
+    } else {
+      branch.admin_id = null;
+      if (prevAdminId && prevAdminId !== newAdminId) {
+        // Admin olib tashlansa — faqat branch_admin foydalanuvchidan filial bog'lanishini uzish
+        const prevUser = db.store.users.find((u) => u.id === prevAdminId);
+        if (prevUser && prevUser.role === 'branch_admin' && Number(prevUser.branch_id) === Number(branch.id)) {
+          prevUser.branch_id = null;
+          db.saveCollection('users');
+        }
       }
     }
   }
@@ -784,23 +915,52 @@ app.post('/api/branches/:id/admin', authRequired, superAdminOnly, (req, res) => 
   });
 });
 
-// Filialni o'chirish (faqat agar o'quvchi, o'quvchi, shifokor yo'q bo'lsa)
+// Filialni o'chirish (faqat agar o'quvchi, o'qituvchi, shifokor yo'q bo'lsa)
 app.delete('/api/branches/:id', authRequired, superAdminOnly, (req, res) => {
   const id = Number(req.params.id);
   const branch = db.store.branches.find((b) => b.id === id);
   if (!branch) return res.status(404).json({ error: 'Filial topilmadi' });
-  const studentCount = db.store.students.filter((s) => s.branch_id === id).length;
-  const teacherCount = db.store.teachers.filter((t) => t.branch_id === id).length;
-  const doctorCount = db.store.doctors.filter((d) => d.branch_id === id).length;
+  const studentCount = db.store.students.filter((s) => Number(s.branch_id) === id).length;
+  const teacherCount = db.store.teachers.filter((t) => Number(t.branch_id) === id).length;
+  const doctorCount = db.store.doctors.filter((d) => Number(d.branch_id) === id).length;
   if (studentCount > 0 || teacherCount > 0 || doctorCount > 0) {
     return res.status(400).json({ error: 'Filialda ma`lumotlar bor, avval ularni o\'chiring yoki boshqa filialga ko\'ching' });
   }
   db.store.branches = db.store.branches.filter((b) => b.id !== id);
-  // Foydalanuvchilarndan bu filialni bo'shatish
-  db.store.users.forEach((u) => { if (u.branch_id === id) u.branch_id = null; });
+  // Foydalanuvchilarni bu filialdan bo'shatamiz (yetim qoldirmaymiz —
+  // ular "filialsiz" bo'lib qolmasin, o'zlari boshqa filga biriktiriladi)
+  db.store.users.forEach((u) => { if (Number(u.branch_id) === id) u.branch_id = null; });
   db.saveCollection('branches');
   db.saveCollection('users');
   res.json({ ok: true });
+});
+
+// Filialga admin biriktirish (mavjud branch_admin foydalanuvchisini tanlash)
+app.post('/api/branches/:id/assign-admin', authRequired, superAdminOnly, (req, res) => {
+  const id = Number(req.params.id);
+  const branch = db.store.branches.find((x) => x.id === id);
+  if (!branch) return res.status(404).json({ error: 'Filial topilmadi' });
+  const userId = Number((req.body || {}).userId);
+  const user = db.store.users.find((u) => u.id === userId);
+  if (!user) return res.status(400).json({ error: 'Foydalanuvchi topilmadi' });
+  if (user.role !== 'branch_admin') return res.status(400).json({ error: 'Faqat filial adminini biriktirish mumkin' });
+  if (user.branch_id && Number(user.branch_id) !== id) {
+    const other = db.store.branches.find((x) => x.id === Number(user.branch_id));
+    return res.status(400).json({ error: `Bu foydalanuvchi "${other ? other.name : 'boshqa filial'}" ga biriktirilgan` });
+  }
+  user.branch_id = id;
+  branch.admin_id = user.id;
+  db.saveCollection('users');
+  db.saveCollection('branches');
+  res.json({ ok: true, user: { id: user.id, username: user.username, fullName: user.fullName, branch_id: id } });
+});
+
+// Yetim (filialsiz) filial adminlarni ro'yxati — ularni biriktirish uchun
+app.get('/api/branches/orphan-admins', authRequired, superAdminOnly, (req, res) => {
+  const list = db.store.users
+    .filter((u) => u.role === 'branch_admin' && !u.branch_id)
+    .map((u) => ({ id: u.id, username: u.username, fullName: u.fullName || null }));
+  res.json(list);
 });
 
 // Foydalanuvchilar ro'yxati (filial adminini tanlash uchun; parol oqmaydi)
@@ -865,11 +1025,7 @@ function medicalView(m) {
 }
 
 app.get('/api/doctors', authRequired, adminOnly, (req, res) => {
-  let list = db.store.doctors;
-  if (req.user.role !== 'super_admin' && req.user.role !== 'admin') {
-    list = list.filter((d) => d.branch_id === req.user.branch_id);
-  }
-  list = list.map((d) => {
+  const list = scopeByBranch(req, db.store.doctors).map((d) => {
     const user = db.store.users.find((u) => u.doctorId === d.id);
     const { photo, ...rest } = d;
     return { ...rest, photoUrl: photo ? '/api/doctors/' + d.id + '/photo' : null, username: user ? user.username : null };
@@ -882,12 +1038,16 @@ app.post('/api/doctors', authRequired, adminOnly, (req, res) => {
   const fullName = String(b.fullName || '').trim();
   if (!fullName) return res.status(400).json({ error: 'To`liq ism majburiy' });
 
+  // Filial: filial admini — o'z filialiga, super admin — tanlagan filialga
+  const br = resolveBranchId(req, b, true);
+  if (br.error) return res.status(400).json({ error: br.error });
+
   const doctor = {
     id: db.nextId('doctors'),
     fullName,
     position: String(b.position || '').trim(),
     photo: b.photo || null,
-    branch_id: req.user.branch_id || null,
+    branch_id: br.branchId || null,
     createdAt: new Date().toISOString(),
   };
   db.store.doctors.push(doctor);
@@ -906,7 +1066,7 @@ app.post('/api/doctors', authRequired, adminOnly, (req, res) => {
     doctorId: doctor.id,
     studentId: null,
     teacherId: null,
-    branch_id: req.user.branch_id || null,
+    branch_id: br.branchId || null,
   };
   db.store.users.push(user);
 
@@ -918,6 +1078,7 @@ app.post('/api/doctors', authRequired, adminOnly, (req, res) => {
 app.post('/api/doctors/:id/credentials', authRequired, adminOnly, (req, res) => {
   const doctor = db.store.doctors.find((d) => d.id === Number(req.params.id));
   if (!doctor) return res.status(404).json({ error: 'Shifokor topilmadi' });
+  if (!denyUnlessInBranch(req, res, doctor, 'Bu shifokor boshqa filialga tegishli')) return;
 
   let user = db.store.users.find((u) => u.doctorId === doctor.id);
   if (!user) {
@@ -929,6 +1090,7 @@ app.post('/api/doctors/:id/credentials', authRequired, adminOnly, (req, res) => 
       role: 'doctor',
       fullName: doctor.fullName,
       doctorId: doctor.id,
+      branch_id: doctor.branch_id || null,
     };
     db.store.users.push(user);
   }
@@ -957,6 +1119,7 @@ if (b.password) {
 app.get('/api/doctors/:id/credentials', authRequired, adminOnly, (req, res) => {
   const doctor = db.store.doctors.find((d) => d.id === Number(req.params.id));
   if (!doctor) return res.status(404).json({ error: 'Shifokor topilmadi' });
+  if (!denyUnlessInBranch(req, res, doctor, 'Bu shifokor boshqa filialga tegishli')) return;
   const user = db.store.users.find((u) => u.role === 'doctor' && u.doctorId === doctor.id);
   if (!user) return res.status(404).json({ error: 'Kirish yozuvi topilmadi' });
   const pw = ensureUserPassword(user);
@@ -967,6 +1130,7 @@ app.get('/api/doctors/:id/credentials', authRequired, adminOnly, (req, res) => {
 app.put('/api/doctors/:id', authRequired, adminOnly, (req, res) => {
   const doctor = db.store.doctors.find((d) => d.id === Number(req.params.id));
   if (!doctor) return res.status(404).json({ error: 'Shifokor topilmadi' });
+  if (!denyUnlessInBranch(req, res, doctor, 'Bu shifokor boshqa filialga tegishli')) return;
   const b = req.body || {};
   if (b.fullName !== undefined) doctor.fullName = String(b.fullName).trim();
   if (b.position !== undefined) doctor.position = String(b.position || '').trim();
@@ -986,6 +1150,7 @@ app.put('/api/doctors/:id', authRequired, adminOnly, (req, res) => {
 app.post('/api/doctors/:id/photo', authRequired, adminOnly, upload.single('photo'), (req, res) => {
   const doctor = db.store.doctors.find((d) => d.id === Number(req.params.id));
   if (!doctor) return res.status(404).json({ error: 'Shifokor topilmadi' });
+  if (!denyUnlessInBranch(req, res, doctor, 'Bu shifokor boshqa filialga tegishli')) return;
   if (!req.file) return res.status(400).json({ error: 'Rasm yuklanmadi' });
   setPhoto(doctor, req.file.buffer, req.file.mimetype, 'd' + doctor.id);
   db.saveCollection('doctors');
@@ -994,6 +1159,9 @@ app.post('/api/doctors/:id/photo', authRequired, adminOnly, upload.single('photo
 
 app.delete('/api/doctors/:id', authRequired, adminOnly, (req, res) => {
   const id = Number(req.params.id);
+  const doctor = db.store.doctors.find((d) => d.id === id);
+  if (!doctor) return res.status(404).json({ error: 'Shifokor topilmadi' });
+  if (!denyUnlessInBranch(req, res, doctor, 'Bu shifokor boshqa filialga tegishli')) return;
   db.store.doctors = db.store.doctors.filter((d) => d.id !== id);
   db.store.users = db.store.users.filter((u) => !(u.role === 'doctor' && u.doctorId === id));
   db.saveCollection('doctors');
@@ -1031,7 +1199,8 @@ app.post('/api/doctor/photo', authRequired, doctorOnly, upload.single('photo'), 
 // Sog'liq kartasi: o'quvchilar + 086 holati + bugungi tekshiruv
 app.get('/api/doctor/students', authRequired, doctorOnly, (req, res) => {
   const date = String(req.query.date || new Date().toISOString().slice(0, 10));
-  const students = db.store.students.map((s) => {
+  // Faqat shifokorning o'z filialidagi o'quvchilar
+  const students = scopeByBranch(req, db.store.students).map((s) => {
     const med = medicalView(db.store.medical.find((m) => m.studentId === s.id));
     const check = db.store.healthchecks.find((h) => h.studentId === s.id && h.date === date);
     return {
@@ -1054,6 +1223,7 @@ app.post('/api/doctor/medical', authRequired, doctorOnly, (req, res) => {
   const studentId = Number(b.studentId);
   const student = db.store.students.find((s) => s.id === studentId);
   if (!student) return res.status(400).json({ error: 'O`quvchi topilmadi' });
+  if (!denyUnlessInBranch(req, res, student, 'Bu o`quvchi boshqa filialga tegishli')) return;
 
   let rec = db.store.medical.find((m) => m.studentId === studentId);
   if (!rec) {
@@ -1076,13 +1246,18 @@ app.post('/api/doctor/medical', authRequired, doctorOnly, (req, res) => {
 });
 
 app.get('/api/doctor/medical', authRequired, doctorOnly, (req, res) => {
-  res.json(db.store.medical.map((m) => ({ studentId: m.studentId, form086: !!m.form086, expiresAt: m.expiresAt || null, lastCheckedAt: m.lastCheckedAt || null })));
+  // Faqat o'z filialidagi o'quvchilar shifolari
+  const ownIds = new Set(scopeByBranch(req, db.store.students).map((s) => s.id));
+  res.json(db.store.medical
+    .filter((m) => ownIds.has(m.studentId))
+    .map((m) => ({ studentId: m.studentId, form086: !!m.form086, expiresAt: m.expiresAt || null, lastCheckedAt: m.lastCheckedAt || null })));
 });
 
 // Kunlik sog'liq tekshiruvi
 app.get('/api/doctor/healthchecks', authRequired, doctorOnly, (req, res) => {
   const date = String(req.query.date || new Date().toISOString().slice(0, 10));
-  const list = db.store.healthchecks.filter((h) => h.date === date).map((h) => {
+  const ownIds = new Set(scopeByBranch(req, db.store.students).map((s) => s.id));
+  const list = db.store.healthchecks.filter((h) => h.date === date && ownIds.has(h.studentId)).map((h) => {
     const s = db.store.students.find((x) => x.id === h.studentId);
     return { ...h, studentName: s ? `${s.lastName} ${s.firstName}` : '' };
   });
@@ -1094,6 +1269,7 @@ app.post('/api/doctor/healthchecks', authRequired, doctorOnly, (req, res) => {
   const studentId = Number(b.studentId);
   const student = db.store.students.find((s) => s.id === studentId);
   if (!student) return res.status(400).json({ error: 'O`quvchi topilmadi' });
+  if (!denyUnlessInBranch(req, res, student, 'Bu o`quvchi boshqa filialga tegishli')) return;
   const date = String(b.date || new Date().toISOString().slice(0, 10));
   const healthOk = !!b.healthOk;
 
@@ -1130,7 +1306,7 @@ app.get('/api/teacher/students', authRequired, teacherOnly, (req, res) => {
   if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
   const className = String(req.query.className || '').trim();
   if (!canClass(teacher, className)) return res.status(403).json({ error: 'Bu sinf sizga biriktirilmagan' });
-  const list = sortStudents(db.store.students.filter((s) => (s.className || '(sinsiz)') === className)).map((s) => {
+  const list = sortStudents(teacherStudents(req, teacher, className)).map((s) => {
     const { photo, ...rest } = s;
     return { ...rest, photoUrl: photo ? '/api/students/' + s.id + '/photo' : null };
   });
@@ -1148,7 +1324,7 @@ app.get('/api/teacher/grades', authRequired, teacherOnly, (req, res) => {
   const year = String(req.query.year || '').trim();
   if (!canClass(teacher, className)) return res.status(403).json({ error: 'Bu sinf sizga biriktirilmagan' });
 
-  const ids = new Set(db.store.students.filter((s) => (s.className || '(sinsiz)') === className).map((s) => s.id));
+  const ids = new Set(teacherStudents(req, teacher, className).map((s) => s.id));
   let list = db.store.grades.filter((g) => ids.has(g.studentId) && (!subject || g.subject === subject) && (!date || g.date === date));
   if (month && year) {
     const prefix = `${year}-${String(month).padStart(2, '0')}`;
@@ -1173,6 +1349,7 @@ app.post('/api/teacher/grades/cell', authRequired, (req, res) => {
     if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
     if (!canClass(teacher, className)) return res.status(403).json({ error: 'Bu sinf sizga biriktirilmagan' });
     if (!teacher.subjects.includes(subject)) return res.status(403).json({ error: 'Bu fan sizga biriktirilmagan' });
+    if (!denyUnlessInBranch(req, res, student, 'Bu o`quvchi boshqa filialga tegishli')) return;
   }
 
   const score = b.score === null || b.score === '' || b.score === undefined ? null : Number(b.score);
@@ -1197,7 +1374,7 @@ app.post('/api/teacher/grades/bulk', authRequired, teacherOnly, (req, res) => {
   if (!canClass(teacher, b.className)) return res.status(403).json({ error: 'Bu sinf sizga biriktirilmagan' });
   if (!teacher.subjects.includes(subject)) return res.status(403).json({ error: 'Bu fan sizga biriktirilmagan' });
 
-  const ids = new Set(db.store.students.filter((s) => (s.className || '(sinsiz)') === b.className).map((s) => s.id));
+  const ids = new Set(teacherStudents(req, teacher, b.className).map((s) => s.id));
   let count = 0;
   for (const rec of b.scores) {
     const score = Number(rec.score);
@@ -1218,7 +1395,7 @@ app.get('/api/teacher/attendance', authRequired, teacherOnly, (req, res) => {
   const date = String(req.query.date || '').trim();
   const className = String(req.query.className || '').trim();
   if (!date || !canClass(teacher, className)) return res.status(403).json({ error: 'Ruxsat yo`q' });
-  const ids = new Set(db.store.students.filter((s) => (s.className || '(sinsiz)') === className).map((s) => s.id));
+  const ids = new Set(teacherStudents(req, teacher, className).map((s) => s.id));
   res.json(db.store.attendance.filter((a) => a.date === date && ids.has(a.studentId)));
 });
 
@@ -1230,7 +1407,7 @@ app.post('/api/teacher/attendance/bulk', authRequired, teacherOnly, (req, res) =
   if (!date || !b.className || !Array.isArray(b.records)) return res.status(400).json({ error: 'Ma`lumot to`liq emas' });
   if (!canClass(teacher, b.className)) return res.status(403).json({ error: 'Bu sinf sizga biriktirilmagan' });
 
-  const ids = new Set(db.store.students.filter((s) => (s.className || '(sinsiz)') === b.className).map((s) => s.id));
+  const ids = new Set(teacherStudents(req, teacher, b.className).map((s) => s.id));
   let count = 0;
   const absentIds = [];
   for (const rec of b.records) {
@@ -1272,8 +1449,8 @@ app.get('/api/tests', authRequired, (req, res) => {
   let list = db.store.tests;
   if (req.user.role === 'teacher') list = list.filter((t) => t.teacherId === req.user.teacherId);
   if (req.user.role === 'branch_admin') {
-    const ownTeacherIds = new Set(db.store.teachers.filter((t) => t.branch_id === req.user.branch_id).map((t) => t.id));
-    list = list.filter((t) => ownTeacherIds.has(t.teacherId));
+    const ownTeacherIds = new Set(db.store.teachers.filter((t) => Number(t.branch_id) === Number(req.user.branch_id)).map((t) => t.id));
+    list = list.filter((t) => Number(t.branch_id) === Number(req.user.branch_id) || ownTeacherIds.has(t.teacherId));
   }
   if (className) list = list.filter((t) => t.className === className);
   list = list
@@ -1295,12 +1472,21 @@ app.post('/api/tests', authRequired, (req, res) => {
   if (!title || !className || !subject) return res.status(400).json({ error: 'Ma`lumot to`liq emas' });
   if (teacher && !canClass(teacher, className)) return res.status(403).json({ error: 'Bu sinf sizga biriktirilmagan' });
 
+  // Filial: o'qituvchi — o'z filiali, super admin — tanlagan filial
+  let branchId = teacherBranchId(req, teacher);
+  if (!teacher && isSuperUser(req)) {
+    const r = resolveBranchId(req, b, false);
+    if (r.error) return res.status(400).json({ error: r.error });
+    branchId = r.branchId;
+  }
+
   db.store.tests.push({
     id: db.nextId('tests'),
     title,
     className,
     subject,
     teacherId: teacher ? teacher.id : null,
+    branch_id: branchId || null,
     date: b.date || new Date().toISOString().slice(0, 10),
     maxScore: Number(b.maxScore) || 100,
     results: Array.isArray(b.results) ? b.results : [],
@@ -1315,6 +1501,9 @@ app.put('/api/tests/:id/results', authRequired, (req, res) => {
   if (!test) return res.status(404).json({ error: 'Nazorat topilmadi' });
   if (req.user.role === 'teacher' && test.teacherId !== req.user.teacherId) {
     return res.status(403).json({ error: 'Bu nazorat sizga tegishli emas' });
+  }
+  if (req.user.role === 'branch_admin' && Number(test.branch_id) !== Number(req.user.branch_id)) {
+    return res.status(403).json({ error: 'Bu nazorat boshqa filialga tegishli' });
   }
   const results = (req.body || {}).results;
   if (!Array.isArray(results)) return res.status(400).json({ error: 'Natijalar kiritilmagan' });
@@ -1334,6 +1523,9 @@ app.delete('/api/tests/:id', authRequired, (req, res) => {
   if (req.user.role === 'teacher' && test.teacherId !== req.user.teacherId) {
     return res.status(403).json({ error: 'Bu nazorat sizga tegishli emas' });
   }
+  if (req.user.role === 'branch_admin' && Number(test.branch_id) !== Number(req.user.branch_id)) {
+    return res.status(403).json({ error: 'Bu nazorat boshqa filialga tegishli' });
+  }
   db.store.tests = db.store.tests.filter((t) => t.id !== Number(req.params.id));
   db.saveCollection('tests');
   res.json({ ok: true });
@@ -1352,11 +1544,13 @@ app.get('/api/teacher/stats', authRequired, teacherOnly, (req, res) => {
   const subjectMap = {};
 
   for (const className of teacher.classes) {
-    const studs = db.store.students.filter((s) => (s.className || '(sinsiz)') === className);
+    // Faqat o'qituvchining o'z filialidagi o'quvchilar
+    const studs = teacherStudents(req, teacher, className);
     const ids = new Set(studs.map((s) => s.id));
     const classGrades = db.store.grades.filter((g) => ids.has(g.studentId) && g.date.startsWith(prefix));
     const classAtt = db.store.attendance.filter((a) => ids.has(a.studentId) && a.date.startsWith(prefix));
-    const classTests = db.store.tests.filter((t) => t.className === className && t.date.startsWith(prefix));
+    const classTests = db.store.tests.filter((t) => t.className === className && t.date.startsWith(prefix)
+      && (Number(t.branch_id) === Number(teacherBranchId(req, teacher)) || t.teacherId === teacher.id));
     const classStudentGrades = db.store.grades.filter((g) => ids.has(g.studentId));
 
     const avg = classGrades.length ? classGrades.reduce((a, b) => a + b.score, 0) / classGrades.length : null;
@@ -1401,10 +1595,7 @@ app.get('/api/teacher/stats', authRequired, teacherOnly, (req, res) => {
 
 // ---------- O'quvchilar ----------
 app.get('/api/students', authRequired, adminOnly, (req, res) => {
-  let list = db.store.students;
-  if (req.user.role !== 'super_admin' && req.user.role !== 'admin') {
-    list = list.filter((s) => s.branch_id === req.user.branch_id);
-  }
+  const list = scopeByBranch(req, db.store.students);
   res.json(sortStudents(list).map((s) => {
     const { photo, ...rest } = s;
     return { ...rest, photoUrl: photo ? '/api/students/' + s.id + '/photo' : null };
@@ -1414,6 +1605,10 @@ app.get('/api/students', authRequired, adminOnly, (req, res) => {
 app.post('/api/students', authRequired, adminOnly, (req, res) => {
   const b = req.body || {};
   if (!b.firstName || !b.lastName) return res.status(400).json({ error: 'Ism va familya majburiy' });
+
+  // Filial: filial admini — o'z filialiga, super admin — tanlagan filialga
+  const br = resolveBranchId(req, b, true);
+  if (br.error) return res.status(400).json({ error: br.error });
 
 const student = {
     id: db.nextId('students'),
@@ -1427,7 +1622,7 @@ const student = {
     parentName: String(b.parentName || '').trim(),
     parentPhone: String(b.parentPhone || '').trim(),
     photo: null,
-    branch_id: req.user.branch_id || null,
+    branch_id: br.branchId || null,
     createdAt: new Date().toISOString(),
   };
 
@@ -1449,7 +1644,7 @@ db.store.users.push({
     role: 'parent',
     fullName: student.parentName || `${student.firstName} ning ota-onasi`,
     studentId: student.id,
-    branch_id: req.user.branch_id || null,
+    branch_id: br.branchId || null,
   });
 
   db.saveCollection('students');
@@ -1460,6 +1655,7 @@ db.store.users.push({
 app.put('/api/students/:id', authRequired, adminOnly, async (req, res) => {
   const student = db.store.students.find((s) => s.id === Number(req.params.id));
   if (!student) return res.status(404).json({ error: 'O`quvchi topilmadi' });
+  if (!denyUnlessInBranch(req, res, student, 'Bu o`quvchi boshqa filialga tegishli')) return;
   const b = req.body || {};
   if (b.firstName) student.firstName = String(b.firstName).trim();
   if (b.lastName) student.lastName = String(b.lastName).trim();
@@ -1470,6 +1666,16 @@ app.put('/api/students/:id', authRequired, adminOnly, async (req, res) => {
   if (b.address !== undefined) student.address = String(b.address || '').trim();
   if (b.parentName !== undefined) student.parentName = String(b.parentName || '').trim();
   if (b.parentPhone !== undefined) student.parentPhone = String(b.parentPhone || '').trim();
+  // O'quvchini boshqa filialga ko'chirish (faqat super admin)
+  if (b.branch_id !== undefined && isSuperUser(req)) {
+    const bid = Number(b.branch_id) || null;
+    if (bid && !db.store.branches.some((x) => x.id === bid)) {
+      return res.status(400).json({ error: 'Bunday filial mavjud emas' });
+    }
+    student.branch_id = bid;
+    db.store.users.forEach((u) => { if (u.role === 'parent' && u.studentId === student.id) u.branch_id = bid; });
+    db.saveCollection('users');
+  }
   invalidateStudentMap();
   db.saveCollection('students');
   await db.flushWrites();
@@ -1478,7 +1684,9 @@ app.put('/api/students/:id', authRequired, adminOnly, async (req, res) => {
 
 app.delete('/api/students/:id', authRequired, adminOnly, (req, res) => {
   const id = Number(req.params.id);
-  if (!db.store.students.some((s) => s.id === id)) return res.status(404).json({ error: 'O`quvchi topilmadi' });
+  const student = db.store.students.find((s) => s.id === id);
+  if (!student) return res.status(404).json({ error: 'O`quvchi topilmadi' });
+  if (!denyUnlessInBranch(req, res, student, 'Bu o`quvchi boshqa filialga tegishli')) return;
   db.store.students = db.store.students.filter((s) => s.id !== id);
   invalidateStudentMap();
   db.store.users = db.store.users.filter((u) => !(u.role === 'parent' && u.studentId === id));
@@ -1503,8 +1711,10 @@ app.delete('/api/students/:id', authRequired, adminOnly, (req, res) => {
 
 // ---------- Sinflar ----------
 app.get('/api/classes', authRequired, adminOnly, (req, res) => {
+  // Faqat o'z filialining sinflari (super admin — barchasi)
+  const students = scopeByBranch(req, db.store.students);
   const map = {};
-  db.store.students.forEach((s) => {
+  students.forEach((s) => {
     const name = s.className || '(sinsiz)';
     map[name] = (map[name] || 0) + 1;
   });
@@ -1512,7 +1722,7 @@ app.get('/api/classes', authRequired, adminOnly, (req, res) => {
     .map(([name, count]) => ({
       name,
       count,
-      totalFee: db.store.students.filter((s) => (s.className || '(sinsiz)') === name).reduce((a, s) => a + (s.monthlyFee || 0), 0),
+      totalFee: students.filter((s) => (s.className || '(sinsiz)') === name).reduce((a, s) => a + (s.monthlyFee || 0), 0),
     }))
     .sort((a, b) => a.name.localeCompare(b.name, 'uz'));
   res.json(list);
@@ -1520,7 +1730,9 @@ app.get('/api/classes', authRequired, adminOnly, (req, res) => {
 
 app.delete('/api/classes/:name', authRequired, adminOnly, (req, res) => {
   const name = decodeURIComponent(req.params.name);
-  const ids = db.store.students.filter((s) => (s.className || '(sinsiz)') === name).map((s) => s.id);
+  // Faqat o'z filialidagi o'quvchilar o'chiriladi
+  const own = scopeByBranch(req, db.store.students);
+  const ids = own.filter((s) => (s.className || '(sinsiz)') === name).map((s) => s.id);
   if (!ids.length) return res.status(404).json({ error: 'Sinf topilmadi' });
 
   db.store.students = db.store.students.filter((s) => !ids.includes(s.id));
@@ -1546,8 +1758,7 @@ app.get('/api/export/class', authRequired, adminOnly, async (req, res) => {
   const className = String(req.query.className || '').trim();
   if (!className) return res.status(400).json({ error: 'Sinf nomi ko`rsatilmagan' });
 
-  const students = db.store.students
-    .filter((s) => (s.className || '(sinsiz)') === className)
+  const students = scopedClassStudents(req, className)
     .sort((a, b) => a.lastName.localeCompare(b.lastName));
 
   const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, TableLayoutType, VerticalAlign, BorderStyle, PageOrientation, AlignmentType } = require('docx');
@@ -1652,8 +1863,7 @@ app.get('/api/export/class', authRequired, adminOnly, async (req, res) => {
 app.get('/api/export/parents', authRequired, adminOnly, async (req, res) => {
   const className = String(req.query.className || '').trim();
   if (!className) return res.status(400).json({ error: 'Sinf nomi ko`rsatilmagan' });
-  const students = db.store.students
-    .filter((s) => (s.className || '(sinsiz)') === className)
+  const students = scopedClassStudents(req, className)
     .sort((a, b) => a.lastName.localeCompare(b.lastName));
 const rows = students.map((s) => {
     let u = db.store.users.find((x) => x.role === 'parent' && x.studentId === s.id);
@@ -1716,8 +1926,7 @@ const rows = students.map((s) => {
 app.get('/api/export/shortlist', authRequired, adminOnly, async (req, res) => {
   const className = String(req.query.className || '').trim();
   if (!className) return res.status(400).json({ error: 'Sinf nomi ko`rsatilmagan' });
-  const students = db.store.students
-    .filter((s) => (s.className || '(sinsiz)') === className)
+  const students = scopedClassStudents(req, className)
     .sort((a, b) => a.lastName.localeCompare(b.lastName));
   const rows = students.map((s) => {
     const last = String(s.lastName || '').trim().toUpperCase();
@@ -1769,8 +1978,7 @@ app.get('/api/export/payments', authRequired, adminOnly, async (req, res) => {
   const className = String(req.query.className || '').trim();
   if (!className) return res.status(400).json({ error: 'Sinf nomi ko`rsatilmagan' });
   const year = Number(req.query.year) || new Date().getFullYear();
-  const students = db.store.students
-    .filter((s) => (s.className || '(sinsiz)') === className)
+  const students = scopedClassStudents(req, className)
     .sort((a, b) => a.lastName.localeCompare(b.lastName));
   const paidById = {};
   db.store.payments
@@ -1844,13 +2052,8 @@ app.get('/api/export/payments/pdf', authRequired, adminOnly, (req, res) => {
     return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
   };
 
-  // Filial chegarasi
-  const branchIds = req.user.role === 'branch_admin'
-    ? new Set(db.store.students.filter((s) => s.branch_id === req.user.branch_id).map((s) => s.id))
-    : null;
-
-  let students = db.store.students.slice();
-  if (branchIds) students = students.filter((s) => branchIds.has(s.id));
+  // Filial chegarasi (branch_admin faqat o'z filialidan export qiladi)
+  let students = scopeByBranch(req, db.store.students);
   if (className) students = students.filter((s) => (s.className || '(sinsiz)') === className);
   students.sort((a, b) => String(a.lastName || '').localeCompare(String(b.lastName || ''), 'uz')
     || String(a.firstName || '').localeCompare(String(b.firstName || ''), 'uz'));
@@ -2044,8 +2247,7 @@ app.get('/api/export/grades', authRequired, async (req, res) => {
     return res.status(403).json({ error: 'Ruxsat yo`q' });
   }
 
-  const students = db.store.students
-    .filter((s) => (s.className || '(sinsiz)') === className)
+  const students = scopedClassStudents(req, className)
     .sort((a, b) => a.lastName.localeCompare(b.lastName));
   if (!students.length) return res.status(400).json({ error: 'Bu sinfda o`quvchi yo`q' });
 
@@ -2182,8 +2384,8 @@ app.get('/api/export/tests/pdf', authRequired, (req, res) => {
   if (className) tests = tests.filter((t) => t.className === className);
   if (role === 'teacher') tests = tests.filter((t) => t.teacherId === req.user.teacherId);
   if (role === 'branch_admin') {
-    const ownTeacherIds = new Set(db.store.teachers.filter((t) => t.branch_id === req.user.branch_id).map((t) => t.id));
-    tests = tests.filter((t) => ownTeacherIds.has(t.teacherId));
+    const ownTeacherIds = new Set(db.store.teachers.filter((t) => Number(t.branch_id) === Number(req.user.branch_id)).map((t) => t.id));
+    tests = tests.filter((t) => Number(t.branch_id) === Number(req.user.branch_id) || ownTeacherIds.has(t.teacherId));
   }
   if (testId && !tests.length) return res.status(404).json({ error: 'Nazorat topilmadi' });
   if (!tests.length) return res.status(400).json({ error: 'Nazoratlar topilmadi' });
@@ -2346,6 +2548,7 @@ app.get('/api/export/tests/pdf', authRequired, (req, res) => {
 app.post('/api/students/:id/photo', authRequired, adminOnly, upload.single('photo'), (req, res) => {
   const student = db.store.students.find((s) => s.id === Number(req.params.id));
   if (!student) return res.status(404).json({ error: 'O`quvchi topilmadi' });
+  if (!denyUnlessInBranch(req, res, student, 'Bu o`quvchi boshqa filialga tegishli')) return;
   if (!req.file) return res.status(400).json({ error: 'Rasm yuklanmadi' });
 
   setPhoto(student, req.file.buffer, req.file.mimetype, 's' + student.id);
@@ -2356,6 +2559,7 @@ app.post('/api/students/:id/photo', authRequired, adminOnly, upload.single('phot
 app.post('/api/teachers/:id/photo', authRequired, adminOnly, upload.single('photo'), (req, res) => {
   const teacher = db.store.teachers.find((t) => t.id === Number(req.params.id));
   if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
+  if (!denyUnlessInBranch(req, res, teacher, 'Bu o`qituvchi boshqa filialga tegishli')) return;
   if (!req.file) return res.status(400).json({ error: 'Rasm yuklanmadi' });
   setPhoto(teacher, req.file.buffer, req.file.mimetype, 't' + teacher.id);
   db.saveCollection('teachers');
@@ -2415,7 +2619,9 @@ app.post('/api/telegram/broadcast', authRequired, adminOnly, async (req, res) =>
   const b = req.body || {};
   const text = String(b.text || '').trim().slice(0, 4000);
   if (!text) return res.status(400).json({ error: 'Xabar matni kiritilmadi' });
-  let users = db.store.users.filter((u) => u.role === 'parent');
+  // Faqat o'z filialining ota-onalari (branch_admin uchun)
+  const ownStudentIds = new Set(scopeByBranch(req, db.store.students).map((s) => s.id));
+  let users = db.store.users.filter((u) => u.role === 'parent' && ownStudentIds.has(u.studentId));
   if (b.className) users = users.filter((u) => {
     const st = db.store.students.find((s) => s.id === u.studentId);
     return st && st.className === b.className;
@@ -2442,7 +2648,8 @@ app.post('/api/telegram/remind-payments', authRequired, adminOnly, async (req, r
   const payments = db.store.payments.filter((p) => p.month === month && p.year === year);
   const paidIds = new Set(payments.filter((p) => p.paid).map((p) => p.studentId));
 
-  let pool = db.store.students.filter((s) => Number(s.monthlyFee) > 0 && !paidIds.has(s.id));
+  // Faqat o'z filialidagi o'quvchilar (branch_admin uchun)
+  let pool = scopeByBranch(req, db.store.students).filter((s) => Number(s.monthlyFee) > 0 && !paidIds.has(s.id));
   // studentIds berilgan bo'lsa — QAT'IY shu ro'yxat. Bo'sh massiv ham "hech kim"
   // degani (butun sinflarga ketib qolmasligi uchun).
   if (Array.isArray(b.studentIds)) {
@@ -2495,6 +2702,9 @@ app.post('/api/telegram/unlink', authRequired, adminOnly, (req, res) => {
 
 // ---------- Ota-ona login/parolini ko'rish va qayta yaratish ----------
 app.get('/api/students/:id/parent-credentials', authRequired, adminOnly, (req, res) => {
+  const student = db.store.students.find((s) => s.id === Number(req.params.id));
+  if (!student) return res.status(404).json({ error: 'O`quvchi topilmadi' });
+  if (!denyUnlessInBranch(req, res, student, 'Bu o`quvchi boshqa filialga tegishli')) return;
   const user = db.store.users.find((u) => u.role === 'parent' && u.studentId === Number(req.params.id));
   if (!user) return res.status(404).json({ error: 'Ota-ona kirish yozuvi topilmadi' });
   const pw = ensureUserPassword(user);
@@ -2505,6 +2715,7 @@ app.get('/api/students/:id/parent-credentials', authRequired, adminOnly, (req, r
 app.post('/api/students/:id/parent-credentials', authRequired, adminOnly, (req, res) => {
   const student = db.store.students.find((s) => s.id === Number(req.params.id));
   if (!student) return res.status(404).json({ error: 'O`quvchi topilmadi' });
+  if (!denyUnlessInBranch(req, res, student, 'Bu o`quvchi boshqa filialga tegishli')) return;
 
   let user = db.store.users.find((u) => u.role === 'parent' && u.studentId === student.id);
   if (!user) {
@@ -2515,6 +2726,7 @@ app.post('/api/students/:id/parent-credentials', authRequired, adminOnly, (req, 
       role: 'parent',
       fullName: student.parentName || `${student.firstName} ning ota-onasi`,
       studentId: student.id,
+      branch_id: student.branch_id || null,
     };
     db.store.users.push(user);
   }
@@ -2558,6 +2770,11 @@ app.post('/api/payments/toggle', authRequired, adminOnly, (req, res) => {
   const { studentId, month, year, paid } = req.body || {};
   if (!studentId || !month || !year) return res.status(400).json({ error: 'Ma`lumot to`liq emas' });
 
+  // O'quvchi faqat o'z filialiga tegishli bo'lishi kerak
+  const stu = db.store.students.find((s) => s.id === Number(studentId));
+  if (!stu) return res.status(404).json({ error: 'O`quvchi topilmadi' });
+  if (!denyUnlessInBranch(req, res, stu, 'Bu o`quvchi boshqa filialga tegishli')) return;
+
   const existing = db.store.payments.find(
     (p) => p.studentId === studentId && p.month === Number(month) && p.year === Number(year)
   );
@@ -2595,9 +2812,9 @@ app.post('/api/payments/bulk', authRequired, adminOnly, (req, res) => {
   if (!Array.isArray(studentIds) || !studentIds.length) return res.status(400).json({ error: 'O`quvchilar tanlanmagan' });
   if (!m || m < 1 || m > 12 || !y) return res.status(400).json({ error: 'Oy yoki yil noto`g`ri' });
 
-  const allowed = req.user.role === 'branch_admin'
-    ? new Set(db.store.students.filter((s) => s.branch_id === req.user.branch_id).map((s) => s.id))
-    : new Set(db.store.students.map((s) => s.id));
+  const allowed = isSuperUser(req)
+    ? new Set(db.store.students.map((s) => s.id))
+    : new Set(db.store.students.filter((s) => Number(s.branch_id) === Number(req.user.branch_id)).map((s) => s.id));
 
   const ids = [...new Set(studentIds.map(Number).filter((id) => allowed.has(id)))];
   if (!ids.length) return res.status(400).json({ error: 'Bu o`quvchilarga ruxsat yo`q' });
@@ -2641,6 +2858,11 @@ app.post('/api/attendance', authRequired, adminOnly, (req, res) => {
   if (!studentId || !date) return res.status(400).json({ error: 'Ma`lumot to`liq emas' });
   const valid = ['present', 'absent', 'late', null];
   if (!valid.includes(status)) return res.status(400).json({ error: 'Status noto`g`ri' });
+
+  // O'quvchi faqat o'z filialiga tegishli bo'lishi kerak
+  const stu = db.store.students.find((s) => s.id === Number(studentId));
+  if (!stu) return res.status(404).json({ error: 'O`quvchi topilmadi' });
+  if (!denyUnlessInBranch(req, res, stu, 'Bu o`quvchi boshqa filialga tegishli')) return;
 
   const existing = db.store.attendance.find((a) => a.studentId === studentId && a.date === date);
   if (status === null) {
@@ -2716,7 +2938,7 @@ app.get('/api/grades', authRequired, (req, res) => {
   let list = db.store.grades;
   if (!isNaN(studentId)) list = list.filter((g) => g.studentId === studentId);
   if (req.user.role !== 'super_admin' && req.user.role !== 'admin' && req.user.role !== 'parent') {
-    const studentIds = db.store.students.filter((s) => s.branch_id === req.user.branch_id).map((s) => s.id);
+    const studentIds = db.store.students.filter((s) => Number(s.branch_id) === Number(req.user.branch_id)).map((s) => s.id);
     list = list.filter((g) => studentIds.includes(g.studentId));
   }
   res.json(list);
@@ -2727,6 +2949,11 @@ app.post('/api/grades', authRequired, adminOnly, (req, res) => {
   if (!studentId || !subject || !score) return res.status(400).json({ error: 'Ma`lumot to`liq emas' });
   const s = Number(score);
   if (s < 1 || s > 5) return res.status(400).json({ error: 'BahO 1–5 oralig`ida bo`lishi kerak' });
+
+  // O'quvchi faqat o'z filialiga tegishli bo'lishi kerak
+  const stu = db.store.students.find((x) => x.id === Number(studentId));
+  if (!stu) return res.status(404).json({ error: 'O`quvchi topilmadi' });
+  if (!denyUnlessInBranch(req, res, stu, 'Bu o`quvchi boshqa filialga tegishli')) return;
 
   db.store.grades.push({
     id: db.nextId('grades'),
@@ -2740,6 +2967,10 @@ app.post('/api/grades', authRequired, adminOnly, (req, res) => {
 });
 
 app.delete('/api/grades/:id', authRequired, adminOnly, (req, res) => {
+  const grade = db.store.grades.find((g) => g.id === Number(req.params.id));
+  if (!grade) return res.status(404).json({ error: 'Baho topilmadi' });
+  const stu = db.store.students.find((s) => s.id === grade.studentId);
+  if (stu && !denyUnlessInBranch(req, res, stu, 'Bu baho boshqa filialdagi o`quvchiga tegishli')) return;
   db.store.grades = db.store.grades.filter((g) => g.id !== Number(req.params.id));
   db.saveCollection('grades');
   res.json({ ok: true });
@@ -2869,17 +3100,21 @@ app.get('/api/stats', authRequired, adminOnly, (req, res) => {
   const month = new Date().getMonth() + 1;
   const year = new Date().getFullYear();
 
-  const totalStudents = db.store.students.length;
-  const todayAttendance = db.store.attendance.filter((a) => a.date === today);
+  // Faqat o'z filialining ma'lumotlari (super admin — barchasi)
+  const students = scopeByBranch(req, db.store.students);
+  const studentIds = new Set(students.map((s) => s.id));
+
+  const totalStudents = students.length;
+  const todayAttendance = db.store.attendance.filter((a) => a.date === today && studentIds.has(a.studentId));
   const presentToday = todayAttendance.filter((a) => a.status === 'present').length;
   const absentToday = todayAttendance.filter((a) => a.status === 'absent').length;
 
-  const expected = db.store.students.length;
+  const expected = students.length;
   const thisMonthPaid = new Set(
-    db.store.payments.filter((p) => p.paid && p.month === month && p.year === year).map((p) => p.studentId)
+    db.store.payments.filter((p) => p.paid && p.month === month && p.year === year && studentIds.has(p.studentId)).map((p) => p.studentId)
   ).size;
 
-  const grades = db.store.grades;
+  const grades = db.store.grades.filter((g) => studentIds.has(g.studentId));
   const avgSchool = grades.length ? grades.reduce((a, b) => a + b.score, 0) / grades.length : null;
 
   res.json({
@@ -2942,9 +3177,18 @@ function invalidateStudentMap() {
 function chatContactsForUser(me) {
   const all = db.store.users;
   // Filial bo'yicha filtrlash (super_admin/admin bor barcha filiallarni ko'ra oladi)
+  const myBranch = effectiveBranchId(me);
   const allowedUsers = me.role === 'super_admin' || me.role === 'admin'
     ? all
-    : all.filter((u) => u.branch_id === me.branch_id);
+    : all.filter((u) => {
+      if (Number(u.branch_id) !== Number(myBranch)) return false;
+      // O'qituvchi/shifokor/ota-onaning o'z yozuvida filial yo'q bo'lsa ham,
+      // haqiqiy filiali bo'yicha ko'rsatiladi
+      if (u.branch_id === null || u.branch_id === undefined) {
+        return Number(effectiveBranchId(u)) === Number(myBranch);
+      }
+      return true;
+    });
   const contacts = [];
   const otherIds = new Set();
 
@@ -3025,9 +3269,11 @@ app.get('/api/chat/conversations', authRequired, (req, res) => {
   if (!me) return res.status(404).json({ error: 'Foydalanuvchi topilmadi' });
   const all = db.store.users;
   // Filial bo'yicha filtrlash
+  const myBranch = effectiveBranchId(me);
   const allowedUserIds = me.role === 'super_admin' || me.role === 'admin'
     ? new Set(all.map((u) => u.id))
-    : new Set(all.filter((u) => u.branch_id === me.branch_id).map((u) => u.id));
+    : new Set(all.filter((u) => Number(u.branch_id) === Number(myBranch)
+      || ((u.branch_id === null || u.branch_id === undefined) && Number(effectiveBranchId(u)) === Number(myBranch))).map((u) => u.id));
   const convMap = {};
   for (const m of db.store.messages) {
     if (m.from !== me.id && m.to !== me.id) continue;
