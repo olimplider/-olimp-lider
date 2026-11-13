@@ -1793,7 +1793,7 @@ function isCsvContent(buffer) {
 }
 
 // 1-bosqich: faylni tahlil qilish (preview) — hech narsa yozilmaydi
-app.post('/api/students/import/preview', authRequired, superAdminOnly, importUpload.single('file'), (req, res) => {
+app.post('/api/students/import/preview', authRequired, adminOnly, importUpload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Fayl tanlanmagan' });
   try {
     const raw = readSpreadsheet(req.file.buffer, req.file.originalname);
@@ -1812,7 +1812,8 @@ app.post('/api/students/import/preview', authRequired, superAdminOnly, importUpl
 });
 
 // 2-bosqich: tasdiqlash — o'quvchilarni yaratish
-app.post('/api/students/import/confirm', authRequired, superAdminOnly, async (req, res) => {
+// Filial admin uchun ham ochiq: resolveBranchId uni avtomatik o'z filialiga bog'laydi.
+app.post('/api/students/import/confirm', authRequired, adminOnly, async (req, res) => {
   const b = req.body || {};
   const rows = Array.isArray(b.rows) ? b.rows : [];
   if (!rows.length) return res.status(400).json({ error: 'Ma\'lumot yo\'q' });
@@ -1901,7 +1902,7 @@ app.post('/api/students/import/confirm', authRequired, superAdminOnly, async (re
 });
 
 // Namuna fayl (shablon) — Excel/CSV
-app.get('/api/students/import/template', authRequired, superAdminOnly, (req, res) => {
+app.get('/api/students/import/template', authRequired, adminOnly, (req, res) => {
   const XLSX = require('xlsx');
   const rows = [{
     'Familya': 'Valiyev',

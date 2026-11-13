@@ -2522,17 +2522,23 @@ initContact('contactTop');
   };
   // ---------- O'QUVCHILARNI FAYLDAN IMPORT QILISH ----------
   window.appImportStudents = async () => {
-    if (!isSuperRole()) return toast('Faqat super admin import qila oladi', 'error');
-    const branches = await getBranches();
-    const active = branches.filter((b) => b.is_active !== false);
-    if (!active.length) return toast('Avval filial yarating', 'error');
+    // Super admin filialni tanlaydi; filial admin uchun filial avtomatik (o'zinki)
+    let branchHtml = '';
+    let active = [];
+    if (isSuperRole()) {
+      const branches = await getBranches();
+      active = branches.filter((b) => b.is_active !== false);
+      if (!active.length) return toast('Avval filial yarating', 'error');
+      branchHtml = `<div class="form-group"><label>Filial *</label>
+          <select id="impBranch">${active.map((b) => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('')}</select>
+        </div>`;
+    }
 
     showModal(`
       <div class="modal-header"><h3>O'quvchilarni import qilish</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
       <div class="modal-body">
-        <div class="form-group"><label>Filial *</label>
-          <select id="impBranch">${active.map((b) => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('')}</select>
-        </div>
+        ${branchHtml}
+        ${isSuperRole() ? '' : '<div class="hint" style="margin-bottom:12px">O\'quvchilar <b>sizning filialingizga</b> qo\'shiladi.</div>'}
         <div class="form-group"><label>Fayl (Excel .xlsx yoki .csv)</label>
           <input type="file" id="impFile" accept=".xlsx,.xls,.csv">
         </div>
@@ -2594,10 +2600,10 @@ initContact('contactTop');
       btn.disabled = true;
       btn.textContent = 'Yuklanmoqda...';
       try {
-        const r = await API.post('/api/students/import/confirm', {
-          rows: parsed.rows,
-          branch_id: Number(document.getElementById('impBranch').value),
-        });
+        const branchEl = document.getElementById('impBranch');
+        const body = { rows: parsed.rows };
+        if (branchEl) body.branch_id = Number(branchEl.value);
+        const r = await API.post('/api/students/import/confirm', body);
         closeModal();
         toast(`${r.created.length} ta o'quvchi yuklandi${r.skipped ? ', ' + r.skipped + ' ta o\'tkazildi' : ''}${r.failed.length ? ', ' + r.failed.length + ' ta xato' : ''}`);
         students = [];

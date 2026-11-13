@@ -112,6 +112,8 @@ Saqlangach **"Ota-ona kirishi yaratildi"** oynasi ochiladi — undan **login, pa
 
 Ko'p o'quvchilarni bir vaqtda yuklash uchun.
 
+> 👨‍👩‍👧 **Filial admin ham import qila oladi** — o'quvchilar avtomatik **o'z filialiga** qo'shiladi (boshqa filialga yo'olmaydi). Super admin esa qaysi filialga qo'shishini tanlaydi.
+
 **1. Shablon:** **"📥 Import (Excel/CSV)"** → **"📄 Shablon faylni yuklab olish"** (`oquvchilar_shabloni.xlsx`)
 
 **2. Faylni tayyorlang** — ustun nomlari:
@@ -284,6 +286,8 @@ Filial admini **faqat o'z filialini** boshqaradi. Super admin paneli bilan bir x
 - Davomat, baholar, nazorat ishlari
 - Telegram: o'z ota-onalariga xabar, havolalar
 
+> 🔁 **O'quvchilarni ko'chirish kerak emas.** Har bir filial o'z o'quvchilarini **mustaqil** kiritadi — qo'lda yoki Excel/CSV orqali. O'quvchilar faqat **o'z filialida** ko'rinadi.
+
 ---
 
 ## 4. O'qituvchi paneli
@@ -370,14 +374,16 @@ Filial admini **faqat o'z filialini** boshqaradi. Super admin paneli bilan bir x
 
 ### 8.2. Maktabga o'quvchilar joylash
 
-**Usul 1 — Ko'chirish (tez):**
-**O'quvchilar** → belgilang → **"🏫 Filialga ko'chirish"** → yangi filial
+> 🔑 **Muhim:** o'quvchilar super admin tomonidan ko'chirilmaydi. Har bir filial o'z o'quvchilarini **mustaqil** kiritadi.
 
-**Usul 2 — Import (ko'p):**
-**"📥 Import (Excel/CSV)"** → shablonni yuklab oling → to'ldiring → tahlil → **filialni tanlang** → yuklash
+**Usul 1 — Qo'lda (bir nechta):**
+**"+ O'quvchi qo'shish"** → forma → **Saqlash**. Filial avtomatik tanlanadi, ota-ona logini va Telegram havolasi avtomatik yaratiladi.
 
-**Usul 3 — Qo'lda:**
-**"+ O'quvchi qo'shish"** → **Filial** maydonidan yangi maktabni tanlang
+**Usul 2 — Excel/CSV (ko'p):**
+**"📥 Import (Excel/CSV)"** → shablonni yuklab oling → to'ldiring → **"Tahlil qilish"** → **"Yuklash"**. Filial admin uchun o'quvchilar avtomatik o'z filialiga qo'shiladi.
+
+**Usul 3 — Ko'chirish (faqat super admin):**
+**O'quvchilar** → belgilang → **"🏫 Filialga ko'chirish"** → yangi filial. Ota-ona hisobi ham ko'chiriladi va Telegram'da xabar yuboriladi.
 
 ### 8.3. O'qituvchi va shifokor
 
