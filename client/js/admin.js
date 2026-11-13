@@ -170,9 +170,13 @@
   function bulkBarHtml(scope) {
     const acts = BULK_ACTIONS[scope] || [];
     if (!selected.size || !acts.length) return '';
+    // onclick atributi "..." bilan o'ralgani uchun qiymat YONGAN tirnoq (') bilan beriladi.
+    // JSON.stringify ishlatilardi -> onclick="window.appBulkPay("true")" -> atribut buzilib qolardi
+    // va tugma bosilganda "Unexpected end of input" xatosi chiqardi.
+    const arg = (a) => (a.arg === undefined ? '' : `'${String(a.arg).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`);
     return `<div class="bulk-bar">
       <span class="bulk-n">☑️ Tanlangan: <b>${selected.size}</b></span>
-      ${acts.map((a) => `<button class="btn btn-sm ${a.cls}" onclick="window.${a.fn}(${a.arg === undefined ? '' : JSON.stringify(a.arg)})">${a.label}</button>`).join('')}
+      ${acts.map((a) => `<button class="btn btn-sm ${a.cls}" onclick="window.${a.fn}(${arg(a)})">${a.label}</button>`).join('')}
       <button class="btn btn-ghost btn-sm" onclick="window.appSelClear()">Bekor qilish</button>
     </div>`;
   }
