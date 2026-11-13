@@ -154,6 +154,7 @@
     students: [
       { label: '✉️ Xabar yuborish', cls: 'btn-primary', fn: 'appBulkMessage' },
       { label: '📚 Sinfga o\'tkazish', cls: 'btn-outline', fn: 'appBulkMove' },
+      { label: '🏫 Filialga ko\'chirish', cls: 'btn-outline', fn: 'appBulkTransfer', arg: 'students' },
       { label: '🗑️ O\'chirish', cls: 'btn-danger', fn: 'appBulkDelete' },
     ],
     payments: [
@@ -164,6 +165,12 @@
       { label: '✓ Keldi', cls: 'btn-success', fn: 'appBulkAtt', arg: 'present' },
       { label: '⏰ Kechikdi', cls: 'btn-outline', fn: 'appBulkAtt', arg: 'late' },
       { label: '✗ Kelmadi', cls: 'btn-danger', fn: 'appBulkAtt', arg: 'absent' },
+    ],
+    teachers: [
+      { label: '🏫 Filialga ko\'chirish', cls: 'btn-outline', fn: 'appBulkTransfer', arg: 'teachers' },
+    ],
+    doctors: [
+      { label: '🏫 Filialga ko\'chirish', cls: 'btn-outline', fn: 'appBulkTransfer', arg: 'doctors' },
     ],
   };
 
@@ -1823,7 +1830,8 @@ initContact('contactTop');
     }
 
     const rows = teachers.map((t) => `
-      <tr>
+      <tr class="${selected.has(t.id) ? 'sel-row' : ''}">
+        ${selCell(t.id)}
         <td><div class="student-cell">${tAvatar(t)}<div><div class="name">${escapeHtml(t.fullName)}</div><div class="sub">${escapeHtml(t.position || 'O\'qituvchi')} • Login: ${escapeHtml(t.username || '—')}</div></div></div></td>
         <td>${(t.subjects || []).map((s) => `<span class="badge badge-blue" style="margin:2px">${escapeHtml(s)}</span>`).join('') || '—'}</td>
         <td>${(t.classes || []).map((c) => `<span class="badge badge-purple" style="margin:2px">${escapeHtml(c)}</span>`).join('') || '—'}</td>
@@ -1834,10 +1842,13 @@ initContact('contactTop');
         </td>
       </tr>`).join('');
 
-    content.innerHTML = `<div class="panel"><div class="table-wrap"><table>
-      <thead><tr><th>O'qituvchi</th><th>Fanlari</th><th>Sinflari</th><th></th></tr></thead>
+    content.innerHTML = `<div class="panel">
+      ${bulkBarHtml('teachers')}
+      <div class="table-wrap"><table>
+      <thead><tr>${selHead(teachers.map((t) => t.id))}<th>O'qituvchi</th><th>Fanlari</th><th>Sinflari</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div></div>`;
+    bindSel(() => renderTeachers());
   }
 
   async function teacherModal(id) {
@@ -2003,7 +2014,8 @@ initContact('contactTop');
     }
 
     const rows = doctors.map((d) => `
-      <tr>
+      <tr class="${selected.has(d.id) ? 'sel-row' : ''}">
+        ${selCell(d.id)}
         <td><div class="student-cell">${tAvatar(d)}<div><div class="name">${escapeHtml(d.fullName)}</div><div class="sub">${escapeHtml(d.position || 'Shifokor')} • Login: ${escapeHtml(d.username || '—')}</div></div></div></td>
         <td class="actions">
           <button class="btn btn-outline btn-sm" onclick="window.appDoctorCred(${d.id})">Kirish ma'lumotlari</button>
@@ -2012,10 +2024,13 @@ initContact('contactTop');
         </td>
       </tr>`).join('');
 
-    content.innerHTML = `<div class="panel"><div class="table-wrap"><table>
-      <thead><tr><th>Shifokor</th><th></th></tr></thead>
+    content.innerHTML = `<div class="panel">
+      ${bulkBarHtml('doctors')}
+      <div class="table-wrap"><table>
+      <thead><tr>${selHead(doctors.map((d) => d.id))}<th>Shifokor</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div></div>`;
+    bindSel(() => renderDoctors());
   }
 
   async function doctorModal(id) {
@@ -2440,6 +2455,55 @@ initContact('contactTop');
         students = [];
         await renderStudents();
       } catch (e) { toast(e.message, 'error'); document.getElementById('bmGo').disabled = false; }
+    });
+  };
+  // Tanlangan yozuvlarni boshqa filialga ko'chirish
+  window.appBulkTransfer = async (type) => {
+    const ids = selIds();
+    if (!ids.length) return;
+    if (!isSuperRole()) return toast('Faqat super admin filialga ko\'chira oladi', 'error');
+    const t = type || 'students';
+    const title = t === 'students' ? 'o\'quvchini' : (t === 'teachers' ? 'o\'qituvchini' : 'shifokorni');
+    let preview;
+    try {
+      preview = await API.get('/api/transfer/preview?type=' + t + '&ids=' + ids.join(','));
+    } catch (e) { return toast(e.message, 'error'); }
+    const branches = (preview.branches || []).filter((b) => b.is_active !== false);
+    if (branches.length < 2) return toast('Ko\'chirish uchun kamida 2 ta filial kerak', 'error');
+
+    showModal(`
+      <div class="modal-header"><h3>${ids.length} ta ${title} filialga ko'chirish</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
+      <div class="modal-body">
+        <div class="form-group"><label>Yangi filial *</label>
+          <select id="btBranch">${branches.map((b) => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('')}</select>
+        </div>
+        <div class="hint">Ko'chirilayotganlar (hozirgi filiali bilan):</div>
+        <div class="tg-preview-list">${(preview.list || []).slice(0, 25).map((x) => `${escapeHtml(x.name)} <i>(${escapeHtml(x.className)}) — ${escapeHtml(x.branch)}</i>`).join('<br>')}${(preview.list || []).length > 25 ? '<br><i>... va yana ' + (preview.list.length - 25) + ' ta</i>' : ''}</div>
+        ${t === 'students' ? '<div class="hint" style="margin-top:12px">Ota-ona hisoblari ham o\'quvchi bilan birga ko\'chiriladi.</div>' : ''}
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="window.appCloseModal()">Bekor</button>
+        <button class="btn btn-primary" id="btGo">Ko'chirish</button>
+      </div>`);
+
+    document.getElementById('btGo').addEventListener('click', async () => {
+      const branchId = Number(document.getElementById('btBranch').value);
+      const btn = document.getElementById('btGo');
+      if (!branchId) return;
+      btn.disabled = true;
+      btn.textContent = 'Ko\'chirilmoqda...';
+      try {
+        const r = await API.post('/api/transfer', { type: t, ids, branchId });
+        closeModal();
+        clearSel();
+        toast(`${r.moved} ta yozuv "${r.branch.name}" filialiga ko'chirildi${r.skipped ? ', ' + r.skipped + ' ta allaqachon shu filialda edi' : ''}`);
+        students = [];
+        await renderStudents();
+      } catch (e) {
+        toast(e.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Ko\'chirish';
+      }
     });
   };
   window.appBulkDelete = async () => {

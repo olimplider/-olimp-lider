@@ -735,6 +735,7 @@ app.delete('/api/teachers/:id', authRequired, adminOnly, (req, res) => {
   const teacher = db.store.teachers.find((t) => t.id === id);
   if (!teacher) return res.status(404).json({ error: 'O`qituvchi topilmadi' });
   if (!denyUnlessInBranch(req, res, teacher, 'Bu o`qituvchi boshqa filialga tegishli')) return;
+  db.store.teachers = db.store.teachers.filter((t) => t.id !== id);
   db.store.users = db.store.users.filter((u) => !(u.role === 'teacher' && u.teacherId === id));
   db.store.tests = db.store.tests.filter((t) => t.teacherId !== id);
   db.store.teacher_attendance = db.store.teacher_attendance.filter((a) => a.teacherId !== id);
@@ -1529,6 +1530,88 @@ app.delete('/api/tests/:id', authRequired, (req, res) => {
   db.store.tests = db.store.tests.filter((t) => t.id !== Number(req.params.id));
   db.saveCollection('tests');
   res.json({ ok: true });
+});
+
+// ---------- Filialga ko'chirish (faqat super admin) ----------
+// Tanlangan o'quvchi/o'qituvchi/shifokorlarni boshqa filialga o'tkazadi.
+// Ota-ona hisoblari ham o'quvchi bilan birga ko'chiriladi.
+app.post('/api/transfer', authRequired, superAdminOnly, (req, res) => {
+  const b = req.body || {};
+  const type = String(b.type || 'students');
+  const ids = Array.isArray(b.ids) ? b.ids.map(Number).filter((n) => !isNaN(n)) : [];
+  const branchId = Number(b.branchId);
+  if (!ids.length) return res.status(400).json({ error: 'Hech narsa tanlanmagan' });
+  const branch = db.store.branches.find((x) => x.id === branchId);
+  if (!branch) return res.status(400).json({ error: 'Bunday filial mavjud emas' });
+  if (branch.is_active === false) return res.status(400).json({ error: 'Bu filial nofaol' });
+
+  let moved = 0;
+  let skipped = 0;
+
+  if (type === 'students') {
+    const idSet = new Set(ids);
+    const students = db.store.students.filter((s) => idSet.has(s.id));
+    students.forEach((s) => {
+      if (Number(s.branch_id) === branchId) { skipped++; return; }
+      s.branch_id = branchId;
+      moved++;
+      // Ota-ona hisobi ham o'quvchi bilan birga ko'chiriladi
+      db.store.users.forEach((u) => { if (u.role === 'parent' && u.studentId === s.id) u.branch_id = branchId; });
+    });
+    db.saveCollection('students');
+    db.saveCollection('users');
+  } else if (type === 'teachers') {
+    const idSet = new Set(ids);
+    db.store.teachers.forEach((t) => {
+      if (!idSet.has(t.id)) return;
+      if (Number(t.branch_id) === branchId) { skipped++; return; }
+      t.branch_id = branchId;
+      moved++;
+      db.store.users.forEach((u) => { if (u.role === 'teacher' && u.teacherId === t.id) u.branch_id = branchId; });
+    });
+    db.saveCollection('teachers');
+    db.saveCollection('users');
+  } else if (type === 'doctors') {
+    const idSet = new Set(ids);
+    db.store.doctors.forEach((d) => {
+      if (!idSet.has(d.id)) return;
+      if (Number(d.branch_id) === branchId) { skipped++; return; }
+      d.branch_id = branchId;
+      moved++;
+      db.store.users.forEach((u) => { if (u.role === 'doctor' && u.doctorId === d.id) u.branch_id = branchId; });
+    });
+    db.saveCollection('doctors');
+    db.saveCollection('users');
+  } else {
+    return res.status(400).json({ error: "Noma'lum tur" });
+  }
+
+  res.json({ ok: true, moved, skipped, branch: { id: branch.id, name: branch.name } });
+});
+
+// Ko'chirish uchun ma'lumot: nechta yozuv qaysi filialda
+app.get('/api/transfer/preview', authRequired, superAdminOnly, (req, res) => {
+  const type = String(req.query.type || 'students');
+  const ids = String(req.query.ids || '').split(',').map(Number).filter((n) => !isNaN(n));
+  const idSet = new Set(ids);
+  let list = [];
+  if (type === 'students') {
+    list = db.store.students.filter((s) => idSet.has(s.id)).map((s) => ({
+      id: s.id, name: `${s.lastName} ${s.firstName}`, className: s.className || '(sinsiz)',
+      branch: branchNameById(s.branch_id) || 'Filialsiz', branch_id: s.branch_id || null,
+    }));
+  } else if (type === 'teachers') {
+    list = db.store.teachers.filter((t) => idSet.has(t.id)).map((t) => ({
+      id: t.id, name: t.fullName, className: (t.classes || []).join(', ') || '—',
+      branch: branchNameById(t.branch_id) || 'Filialsiz', branch_id: t.branch_id || null,
+    }));
+  } else if (type === 'doctors') {
+    list = db.store.doctors.filter((d) => idSet.has(d.id)).map((d) => ({
+      id: d.id, name: d.fullName, className: d.position || '—',
+      branch: branchNameById(d.branch_id) || 'Filialsiz', branch_id: d.branch_id || null,
+    }));
+  }
+  res.json({ list, branches: db.store.branches.map((b) => ({ id: b.id, name: b.name, is_active: b.is_active })) });
 });
 
 // ---------- O'qituvchi: oylik statistika ----------
