@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  Cloud-init "user-data" — Oracle Console'da instance yaratilayotganda
+#  "Advanced options > User data" maydoniga shu matnni yopishtiring.
+#
+#  Vazifasi: instance birinchi marta ishga tushganda avtomatik sozlanadi
+#  (Node, PM2, kod, Caddy+SSL, keep-alive). Reboot qilinganda ham qayta
+#  ishga tushadi — shuning uchun sayt hech qachon "o'lik" holatda qolmaydi.
+#
+#  ESLIM: maxfiy kalitlar (.env.local) shu yerda YO'Q — ular alohida
+#  yuklanadi (masalan scp orqali). Shuning uchun bootstrap .env.local
+#  yo'q bo'lsa ham o'z-o'zidan ishlaydi, faqat DB kaliti kerak bo'ladi.
+# =============================================================================
+#!/bin/bash
+set -x
+export DEBIAN_FRONTEND=noninteractive
+
+# 1) Asosiy paketlar + Node 20
+apt-get update -y
+apt-get install -y curl git ca-certificates gnupg build-essential
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list
+apt-get update -y
+apt-get install -y nodejs
+
+# 2) PM2
+npm install -g pm2
+
+# 3) Kod
+mkdir -p /home/ubuntu
+if [ ! -d /home/ubuntu/olimp/.git ]; then
+  git clone --depth 1 --branch main https://github.com/olimplider/-olimp-lider.git /home/ubuntu/olimp
+else
+  git -C /home/ubuntu/olimp pull --ff-only
+fi
+chown -R ubuntu:ubuntu /home/ubuntu/olimp
+
+# 4) Bootstrap (asosiy sozlamalar)
+cd /home/ubuntu/olimp
+chmod +x deploy/bootstrap.sh 2>/dev/null || true
+bash deploy/bootstrap.sh || echo "bootstrap qisman bajarildi - qo'lda tekshiring"
+
+# 5) .env.local bo'lmasa ogohlantirish (secrets alohida yuklanadi)
+if [ ! -f /home/ubuntu/olimp/.env.local ]; then
+  echo "DIQQAT: .env.local yo'q! SCP bilan yuklang:"
+  echo "  scp .env.local ubuntu@<IP>:/home/ubuntu/olimp/.env.local"
+  echo "  va keyin: pm2 restart olimp"
+fi
+
+# 6) Boot'da avtomatik ishga tushish (cloud-init bir marta ishga tushadi,
+#    lekin reboot'da ham kerak)
+pm2 save || true
+systemctl enable pm2-ubuntu || true
