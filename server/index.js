@@ -1729,10 +1729,15 @@ db.store.users.push({
     studentId: student.id,
     branch_id: br.branchId || null,
   });
+  const parentUser = db.store.users[db.store.users.length - 1];
 
   db.saveCollection('students');
   db.saveCollection('users');
-  res.status(201).json({ ...student, parentUsername, parentPassword });
+  // Telegram kodi o'quvchi qo'shilishi zahoti yaratiladi — bot ulansa
+  // shu kod darhol ishlaydi (ota-onaga yuborish uchun).
+  telegram.ensureCode(parentUser);
+  const telegramLinkUrl = telegram.configured() ? telegram.linkUrlFor(parentUser) : null;
+  res.status(201).json({ ...student, parentUsername, parentPassword, telegramLinkUrl });
 });
 
 app.put('/api/students/:id', authRequired, adminOnly, async (req, res) => {
@@ -2670,7 +2675,9 @@ app.post('/api/telegram/my/rotate', authRequired, (req, res) => {
 
 // ---------- Telegram bot: admin uchun ----------
 app.get('/api/telegram/status', authRequired, adminOnly, (req, res) => {
-  const parents = db.store.users.filter((u) => u.role === 'parent');
+  // Faqat o'z filialining ota-onalari (super admin — barchasi)
+  const ownStudentIds = new Set(scopeByBranch(req, db.store.students).map((s) => s.id));
+  const parents = db.store.users.filter((u) => u.role === 'parent' && ownStudentIds.has(u.studentId));
   const links = telegram.links();
   const byUser = new Map(links.map((l) => [l.userId, l]));
   const list = parents.map((u) => {
@@ -2686,6 +2693,7 @@ app.get('/api/telegram/status', authRequired, adminOnly, (req, res) => {
       tgUsername: l ? l.tgUsername : '',
       linkedAt: l ? l.linkedAt : null,
       linkUrl: l ? null : telegram.linkUrlFor(u),
+      branchName: st ? (branchNameById(st.branch_id) || 'Filialsiz') : 'Filialsiz',
     };
   });
   list.sort((a, b) => (a.className || '').localeCompare(b.className || '') || String(a.name).localeCompare(String(b.name)));
@@ -2775,11 +2783,18 @@ app.post('/api/telegram/relink', authRequired, adminOnly, (req, res) => {
   const userId = Number((req.body || {}).userId);
   const u = db.store.users.find((x) => x.id === userId && x.role === 'parent');
   if (!u) return res.status(404).json({ error: 'Ota-ona topilmadi' });
+  // Faqat o'z filialining ota-onasi uchun link yangilanadi
+  const st = db.store.students.find((s) => s.id === u.studentId);
+  if (st && !denyUnlessInBranch(req, res, st, 'Bu ota-ona boshqa filialga tegishli')) return;
   res.json({ ok: true, linkUrl: telegram.rotateCode(userId) });
 });
 
 app.post('/api/telegram/unlink', authRequired, adminOnly, (req, res) => {
   const userId = Number((req.body || {}).userId);
+  const u = db.store.users.find((x) => x.id === userId && x.role === 'parent');
+  if (!u) return res.status(404).json({ error: 'Ota-ona topilmadi' });
+  const st = db.store.students.find((s) => s.id === u.studentId);
+  if (st && !denyUnlessInBranch(req, res, st, 'Bu ota-ona boshqa filialga tegishli')) return;
   res.json({ ok: telegram.unlinkUser(userId) });
 });
 

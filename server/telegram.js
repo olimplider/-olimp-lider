@@ -106,8 +106,11 @@ function ensureCode(user) {
 }
 
 function linkUrlFor(user) {
+  // Kod har doim yaratiladi (bot yo'q bo'lsa ham) — keyin bot ulanganda
+  // shu kod darhol ishlaydi. Aks holda kod null qolib ketardi.
+  const code = ensureCode(user);
   if (!bot || !bot.username) return null;
-  return `https://t.me/${bot.username}?start=${ensureCode(user)}`;
+  return `https://t.me/${bot.username}?start=${code}`;
 }
 
 function linkParent(user, chatId, username) {

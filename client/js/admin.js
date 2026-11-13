@@ -625,6 +625,7 @@
   }
 
   function showCredentialsModal(st) {
+    const tgUrl = st.telegramLinkUrl || '';
     modalContent.innerHTML = `
       <div class="modal-header"><h3>Ota-ona kirishi yaratildi</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
       <div class="modal-body">
@@ -639,6 +640,15 @@
             <button class="btn btn-outline btn-sm" onclick="window.appCopy('credPass')">Nusxalash</button>
           </div>
         </div>
+        ${tgUrl ? `
+        <div style="background:var(--card-2);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-top:14px">
+          <div style="font-weight:600;margin-bottom:4px">📱 Telegram botga ulash</div>
+          <div class="muted" style="margin-bottom:10px">Ota-ona shu havolani bosgach, kelgusi xabarlar (davomat, baho, qarz) Telegram'ga avtomatik keladi.</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <div style="font-size:13px;word-break:break-all;flex:1" id="credTg">${escapeHtml(tgUrl)}</div>
+            <button class="btn btn-outline btn-sm" onclick="window.appCopy('credTg')">Nusxalash</button>
+          </div>
+        </div>` : ''}
         <p style="margin-top:14px" class="muted">Sayt manzili: <b>${location.origin}</b>. Ota-ona kirish login sahifasidan farzandini kuzatadi.</p>
       </div>
       <div class="modal-footer"><button class="btn btn-primary" onclick="showCredentialsModal._done()">Yopish</button></div>
@@ -2206,6 +2216,7 @@ initContact('contactTop');
       ${selCell(x.userId)}
       <td><b>${escapeHtml(x.name || '—')}</b><div class="sub">${escapeHtml(x.parentName || '')}</div></td>
       <td><span class="badge badge-purple">${escapeHtml(x.className || '—')}</span></td>
+      ${isSuperRole() ? `<td><span class="badge badge-blue">${escapeHtml(x.branchName || '—')}</span></td>` : ''}
       <td>${escapeHtml(x.phone || '—')}</td>
       <td>${x.linked
         ? `<span class="pay-status ok">✓ Ulangan${x.tgUsername ? ' (@' + escapeHtml(x.tgUsername) + ')' : ''}</span>`
@@ -2218,7 +2229,7 @@ initContact('contactTop');
 
     content.innerHTML = `
       <div class="panel">
-        <div class="panel-header"><h3>Telegram bot</h3><span class="badge badge-blue">@${escapeHtml(d.bot.username)}</span></div>
+        <div class="panel-header"><h3>Telegram bot${branchName ? ' — ' + escapeHtml(branchName) : ''}</h3><span class="badge badge-blue">@${escapeHtml(d.bot.username)}</span></div>
         <div class="panel-body">
           <div class="progress-wrap" style="margin-bottom:10px"><div class="progress"><div style="width:${pct}%;background:linear-gradient(90deg,#d4af37,#b8922e)"></div></div><span style="font-size:14px;font-weight:600">${d.linked} / ${d.total} ota-ona ulangan (${pct}%)</span></div>
           <div class="hint">Ota-ona saytga kirib "Telegram\'ga ulash" tugmasini bosadi — shundan keyin shu yerda xabar oladi. Ulanmagan ota-onalarga xabar yetib bormaydi.</div>
@@ -2260,7 +2271,7 @@ initContact('contactTop');
       <div class="panel">
         <div class="panel-header"><h3>Ulangan ota-onalar</h3><span class="badge badge-blue">${yesLinked.length}</span></div>
         ${yesLinked.length ? `<div class="table-wrap"><table>
-          <thead><tr><th style="width:52px">T/r</th><th>O'quvchi</th><th>Sinf</th><th>Telefon</th><th>Holat</th><th></th></tr></thead>
+          <thead><tr><th style="width:52px">T/r</th><th>O'quvchi</th><th>Sinf</th>${isSuperRole() ? '<th>Filial</th>' : ''}<th>Telefon</th><th>Holat</th><th></th></tr></thead>
           <tbody>${yesLinked.map((x, i) => `<tr><td class="rownum">${i + 1}</td>
             <td><b>${escapeHtml(x.name || '—')}</b><div class="sub">${escapeHtml(x.parentName || '')}</div></td>
             <td><span class="badge badge-purple">${escapeHtml(x.className || '—')}</span></td>
