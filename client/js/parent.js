@@ -11,6 +11,7 @@
 
   let data = null;
   let section = 'overview';
+  let currentStudentId = null;
 
   const TITLES = {
     overview: 'Umumiy holat',
@@ -25,8 +26,33 @@
 
   async function loadData(force = false) {
     if (data && !force) return data;
-    data = await API.get('/api/parent');
+    const q = currentStudentId ? ('?studentId=' + currentStudentId) : '';
+    data = await API.get('/api/parent' + q);
+    if (!currentStudentId && data.student) currentStudentId = data.student.id;
     return data;
+  }
+
+  // Farzand tanlash (bir ota-onada bir nechta farzand bo'lishi mumkin)
+  function childSwitcherHtml() {
+    const kids = (data && data.students) || [];
+    if (kids.length < 2) return '';
+    const cur = data.student || {};
+    return `<div class="panel" style="margin-bottom:14px"><div class="panel-body" style="padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <label style="font-weight:600;margin:0">Farzand:</label>
+      <select id="childSel" class="f-select" style="max-width:320px">
+        ${kids.map((k) => `<option value="${k.id}" ${k.id === cur.id ? 'selected' : ''}>${escapeHtml(k.lastName)} ${escapeHtml(k.firstName)} — ${escapeHtml(k.className || '(sinsiz)')}${k.branchName ? ' · ' + escapeHtml(k.branchName) : ''}</option>`).join('')}
+      </select>
+    </div></div>`;
+  }
+
+  function bindChildSwitcher() {
+    const sel = document.getElementById('childSel');
+    if (!sel) return;
+    sel.addEventListener('change', async (e) => {
+      currentStudentId = Number(e.target.value);
+      data = null;
+      await render();
+    });
   }
 
   document.querySelectorAll('.nav-item[data-section]').forEach((btn) => {
@@ -57,6 +83,12 @@
       else if (section === 'diary') renderDiary();
       else if (section === 'teachers') renderTeachers();
       else if (section === 'payments') renderPayments();
+      // Farzand tanlash panelini barcha bo'limlarning yuqorisiga qo'shamiz
+      const sw = childSwitcherHtml();
+      if (sw) {
+        content.insertAdjacentHTML('afterbegin', sw);
+        bindChildSwitcher();
+      }
     } catch (e) {
       content.innerHTML = '<div class="alert-error" style="display:block;max-width:500px;margin:20px auto;">' + escapeHtml(e.message) + '</div>';
     }
@@ -103,6 +135,7 @@
           <h2>${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</h2>
           <div class="meta">${escapeHtml(s.patronymic)} • ${escapeHtml(s.className)} sinfi</div>
           <div class="meta">${escapeHtml(s.parentName)} • ${escapeHtml(s.parentPhone)}</div>
+          ${data.branchName ? `<div class="meta">🏫 ${escapeHtml(data.branchName)}</div>` : ''}
         </div>
         <div class="avg-circle">${data.avgGrade ? data.avgGrade.toFixed(2) : '—'}<span>o'rt. baho</span></div>
       </div>`;

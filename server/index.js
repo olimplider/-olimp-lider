@@ -182,7 +182,19 @@ const upload = multer({
 
 function signToken(user) {
   return jwt.sign(
-    { id: user.id, username: user.username, role: user.role, studentId: user.studentId || null, teacherId: user.teacherId || null, doctorId: user.doctorId || null, branch_id: user.branch_id || null },
+    {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      studentId: user.studentId || null,
+      // Ota-onaning barcha farzandlari (bitta login — ko'p farzand mumkin)
+      studentIds: Array.isArray(user.studentIds) && user.studentIds.length
+        ? user.studentIds.slice()
+        : (user.studentId ? [user.studentId] : []),
+      teacherId: user.teacherId || null,
+      doctorId: user.doctorId || null,
+      branch_id: user.branch_id || null,
+    },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -1551,15 +1563,30 @@ app.post('/api/transfer', authRequired, superAdminOnly, (req, res) => {
   if (type === 'students') {
     const idSet = new Set(ids);
     const students = db.store.students.filter((s) => idSet.has(s.id));
+    const notify = [];
     students.forEach((s) => {
       if (Number(s.branch_id) === branchId) { skipped++; return; }
+      const oldBranchName = branchNameById(s.branch_id) || '';
       s.branch_id = branchId;
       moved++;
       // Ota-ona hisobi ham o'quvchi bilan birga ko'chiriladi
-      db.store.users.forEach((u) => { if (u.role === 'parent' && u.studentId === s.id) u.branch_id = branchId; });
+      db.store.users.forEach((u) => {
+        if (u.role === 'parent' && (u.studentId === s.id || (Array.isArray(u.studentIds) && u.studentIds.includes(s.id)))) {
+          u.branch_id = branchId;
+        }
+      });
+      // Telegram'da ogohlantirish (faqat ulangan ota-onalarga)
+      const p = telegram.parentUserOf(s);
+      if (p && telegram.configured()) {
+        notify.push({ userId: p.id, text: telegram.textTransfer(s, oldBranchName, branch.name) });
+      }
     });
     db.saveCollection('students');
     db.saveCollection('users');
+    if (notify.length) {
+      telegram.notifyParentsEach(notify, 'transfer')
+        .catch((e) => console.error('Telegram (transfer):', e.message));
+    }
   } else if (type === 'teachers') {
     const idSet = new Set(ids);
     db.store.teachers.forEach((t) => {
@@ -1612,6 +1639,287 @@ app.get('/api/transfer/preview', authRequired, superAdminOnly, (req, res) => {
     }));
   }
   res.json({ list, branches: db.store.branches.map((b) => ({ id: b.id, name: b.name, is_active: b.is_active })) });
+});
+
+// ---------- O'quvchilarni fayldan import qilish (Excel/CSV) ----------
+// Ustun nomlari erkin: familya/ism/otasing ismi/sinf/tug'ilgan sana/oylik to'lov/
+// ota-ona ismi/ota-ona telefoni (ruscha va o'zbekcha nomlar ham qabul qilinadi).
+const IMPORT_FIELDS = [
+  { key: 'lastName', label: 'Familya', must: true, words: ['familya', 'familiy', 'family', 'lastname', 'last name', 'фамилия', 'фамилия', 'f.i.sh', 'фио', 'f.i.sh.'] },
+  { key: 'firstName', label: 'Ism', must: true, words: ['ism', 'ismi', 'firstname', 'first name', 'имя', 'name'] },
+  { key: 'patronymic', label: "Otasining ismi", words: ['otasing ismi', 'otasining ismi', 'otasining', 'patronymic', 'отчество', 'отче'] },
+  { key: 'className', label: 'Sinf', words: ['sinf', 'sinfi', 'class', 'classname', 'class name', 'класс', 'group'] },
+  { key: 'birthDate', label: "Tug'ilgan sana", words: ['tugilgan', 'tugilgan sana', 'tugilgan sanasi', 'birthdate', 'birth date', 'sana', 'дата рождения', 'dob'] },
+  { key: 'monthlyFee', label: "Oylik to'lov", words: ['oylik tolov', 'oylik', 'tolov', 'fee', 'payment', 'сумма', 'плата', 'narx'] },
+  { key: 'parentName', label: 'Ota-ona ismi', words: ['ota-ona', 'otaona', 'ota ona ismi', 'parent', 'parentname', 'родитель'] },
+  { key: 'parentPhone', label: 'Ota-ona telefoni', words: ['telefon', 'phone', 'tel', 'тел', 'телефон'] },
+];
+
+function normHeader(h) {
+  return String(h || '')
+    .replace(/^\uFEFF/, '')                  // Excel BOM
+    .toLowerCase()
+    .replace(/[’'ʻ`"«»]/g, '')              // apostrof va tirnoqlar — "Oylik to'lov" -> "oylik tolov"
+    .replace(/ё/g, 'е')                       // "ё" -> "е"
+    .replace(/[_\-.]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function matchImportHeader(header) {
+  const h = normHeader(header);
+  if (!h) return null;
+  for (const f of IMPORT_FIELDS) {
+    if (f.words.some((w) => h === w || h.includes(w))) return f.key;
+  }
+  return null;
+}
+
+function parseImportRows(rawRows) {
+  if (!rawRows.length) return { rows: [], errors: ['Fayl bo\'sh'] };
+  const header = rawRows[0];
+  const map = {};
+  header.forEach((h, i) => {
+    const key = matchImportHeader(h);
+    if (key && !map[key]) map[key] = i;
+  });
+  if (map.lastName === undefined || map.firstName === undefined) {
+    return { rows: [], errors: ['"Familya" va "Ism" ustunlari topilmadi. Ustun nomlarini tekshiring.'] };
+  }
+
+  const rows = [];
+  const errors = [];
+  rawRows.slice(1).forEach((r, ri) => {
+    const lineNo = ri + 2;
+    const get = (k) => {
+      const v = map[k] === undefined ? '' : r[map[k]];
+      return v === undefined || v === null ? '' : String(v).trim();
+    };
+    const lastName = get('lastName');
+    const firstName = get('firstName');
+    if (!lastName && !firstName) return; // bo\'sh qator
+    const warn = [];
+    if (!lastName) warn.push('Familya yo\'q');
+    if (!firstName) warn.push('Ism yo\'q');
+
+    let fee = 0;
+    const feeRaw = get('monthlyFee').replace(/[^\d]/g, '');
+    if (feeRaw) fee = Number(feeRaw) || 0;
+
+    let birth = get('birthDate');
+    // 01.02.2003 / 2003-02-01 / Excel seriya raqami
+    if (/^\d{2}[.\-/]\d{2}[.\-/]\d{4}$/.test(birth)) {
+      const [d, m, y] = birth.split(/[.\-/]/);
+      birth = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    } else if (/^\d{4}[.\-/]\d{2}[.\-/]\d{2}$/.test(birth)) {
+      birth = birth.replace(/[.\/]/g, '-');
+    } else if (/^\d{5}$/.test(birth)) {
+      // Excel seriya raqami (1900-dan boshlab)
+      const ms = Math.round((Number(birth) - 25569) * 86400 * 1000);
+      const d = new Date(ms);
+      birth = d.toISOString().slice(0, 10);
+    } else if (birth) {
+      warn.push('Sana formati noaniq');
+      birth = '';
+    }
+
+    const phone = get('parentPhone');
+    if (phone && !/^\+?[\d\s\-()]{7,}$/.test(phone)) warn.push('Telefon shakli shubhali');
+
+    rows.push({
+      line: lineNo,
+      lastName,
+      firstName,
+      patronymic: get('patronymic'),
+      className: get('className'),
+      birthDate: birth,
+      monthlyFee: fee,
+      parentName: get('parentName'),
+      parentPhone: phone,
+      warnings: warn,
+    });
+  });
+  return { rows, errors, mapped: Object.keys(map) };
+}
+
+const importUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024 },
+});
+
+// CSV ajratuvchisini aniqlash (vergul, nuqta-vergul yoki tab)
+function detectSeparator(text) {
+  const line = String(text || '').split(/\r?\n/)[0] || '';
+  const clean = line.replace(/"[^"]*"/g, '');
+  const cands = [',', ';', '\t'];
+  let best = ',';
+  let bestCount = 0;
+  for (const c of cands) {
+    const n = clean.split(c).length - 1;
+    if (n > bestCount) { bestCount = n; best = c; }
+  }
+  return bestCount > 0 ? best : ',';
+}
+
+// Excel (.xlsx) yoki CSV faylni qatorlar massiviga o'qish.
+// CSV UTF-8 bo'lishi shart — XLSX binary rejimda kod sahifani Latin-1 deb o'qiyapti.
+function readSpreadsheet(buffer, fileName) {
+  const XLSX = require('xlsx');
+  const isBinaryExcel = buffer.length > 2 && buffer[0] === 0x50 && buffer[1] === 0x4b;
+  const looksCsv = /\.csv$|\.txt$/i.test(String(fileName || ''));
+  let raw;
+  if (isBinaryExcel || (!looksCsv && !isCsvContent(buffer))) {
+    const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    raw = sheet ? XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false }) : [];
+  } else {
+    let text = buffer.toString('utf8').replace(/^\uFEFF/, '');
+    const sep = detectSeparator(text);
+    const wb = XLSX.read(text, { type: 'string', FS: sep, raw: false });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    raw = sheet ? XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false }) : [];
+  }
+  return raw;
+}
+
+// Fayl matn ko'rinishidami (CSV) yoki Excel binary?
+function isCsvContent(buffer) {
+  const head = buffer.slice(0, 400).toString('utf8');
+  if (!head) return false;
+  if (head.indexOf('\u0000') !== -1) return false;
+  // Excel binary PK belgisi
+  if (buffer.length > 2 && buffer[0] === 0x50 && buffer[1] === 0x4b) return false;
+  return true;
+}
+
+// 1-bosqich: faylni tahlil qilish (preview) — hech narsa yozilmaydi
+app.post('/api/students/import/preview', authRequired, superAdminOnly, importUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Fayl tanlanmagan' });
+  try {
+    const raw = readSpreadsheet(req.file.buffer, req.file.originalname);
+    const parsed = parseImportRows(raw);
+    if (parsed.errors.length && !parsed.rows.length) return res.status(400).json({ error: parsed.errors[0] });
+    res.json({
+      fileName: req.file.originalname,
+      total: parsed.rows.length,
+      rows: parsed.rows.slice(0, 500),
+      errors: parsed.errors,
+      mapped: parsed.mapped,
+    });
+  } catch (e) {
+    res.status(400).json({ error: 'Faylni o\'qib bo\'lmadi: ' + e.message });
+  }
+});
+
+// 2-bosqich: tasdiqlash — o'quvchilarni yaratish
+app.post('/api/students/import/confirm', authRequired, superAdminOnly, async (req, res) => {
+  const b = req.body || {};
+  const rows = Array.isArray(b.rows) ? b.rows : [];
+  if (!rows.length) return res.status(400).json({ error: 'Ma\'lumot yo\'q' });
+  const br = resolveBranchId(req, b, true);
+  if (br.error) return res.status(400).json({ error: br.error });
+
+  const created = [];
+  const skipped = [];
+  const failed = [];
+
+  for (const r of rows) {
+    const lastName = String(r.lastName || '').trim();
+    const firstName = String(r.firstName || '').trim();
+    if (!lastName || !firstName) { skipped.push(r); continue; }
+    try {
+      const student = {
+        id: db.nextId('students'),
+        firstName,
+        lastName,
+        patronymic: String(r.patronymic || '').trim(),
+        className: String(r.className || '').trim(),
+        birthDate: r.birthDate || null,
+        monthlyFee: Number(r.monthlyFee) || 0,
+        address: String(r.address || '').trim(),
+        parentName: String(r.parentName || '').trim(),
+        parentPhone: String(r.parentPhone || '').trim(),
+        photo: null,
+        branch_id: br.branchId || null,
+        createdAt: new Date().toISOString(),
+      };
+      db.store.students.push(student);
+      invalidateStudentMap();
+
+      // Ota-onaning logini topish (telefon bo'yicha) yoki yaratish
+      const normPhone = student.parentPhone.replace(/[^\d+]/g, '');
+      let parentUser = null;
+      if (normPhone.length >= 9) {
+        parentUser = db.store.users.find((u) => {
+          if (u.role !== 'parent') return false;
+          const st = db.store.students.find((s) => s.id === u.studentId);
+          return String((st && st.parentPhone) || '').replace(/[^\d+]/g, '') === normPhone;
+        }) || null;
+      }
+      let parentUsername;
+      let parentPassword = null;
+      if (parentUser) {
+        if (!Array.isArray(parentUser.studentIds)) parentUser.studentIds = parentUser.studentId ? [parentUser.studentId] : [];
+        if (!parentUser.studentIds.includes(student.id)) parentUser.studentIds.push(student.id);
+        if (!parentUser.studentId) parentUser.studentId = student.id;
+        parentUsername = parentUser.username;
+      } else {
+        parentUsername = ensureUniqueUsername(makeUsername(student.lastName, student.firstName));
+        parentPassword = makePassword(8);
+        parentUser = {
+          id: db.nextId('users'),
+          username: parentUsername,
+          passwordHash: db.hashPassword(parentPassword),
+          pwEnc: secrets.encrypt(parentPassword),
+          role: 'parent',
+          fullName: student.parentName || `${student.firstName} ning ota-onasi`,
+          studentId: student.id,
+          studentIds: [student.id],
+          branch_id: br.branchId || null,
+        };
+        db.store.users.push(parentUser);
+      }
+      telegram.ensureCode(parentUser);
+      created.push({
+        line: r.line,
+        studentId: student.id,
+        lastName: student.lastName,
+        firstName: student.firstName,
+        className: student.className,
+        parentUsername,
+        parentPassword,
+        telegramLinkUrl: telegram.configured() ? telegram.linkUrlFor(parentUser) : null,
+      });
+    } catch (e) {
+      failed.push({ line: r.line, error: e.message });
+    }
+  }
+
+  db.saveCollection('students');
+  db.saveCollection('users');
+  res.json({ ok: true, created, skipped: skipped.length, failed });
+});
+
+// Namuna fayl (shablon) — Excel/CSV
+app.get('/api/students/import/template', authRequired, superAdminOnly, (req, res) => {
+  const XLSX = require('xlsx');
+  const rows = [{
+    'Familya': 'Valiyev',
+    'Ism': 'Ali',
+    "Otasining ismi": 'Valiyevich',
+    'Sinf': '5-A',
+    "Tug'ilgan sana": '2013-04-12',
+    "Oylik to'lov": 500000,
+    'Ota-ona ismi': 'Karim Valiyev',
+    'Ota-ona telefoni': '+998901234567',
+  }];
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Oquvchilar');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', 'attachment; filename="oquvchilar_shabloni.xlsx"');
+  res.send(buf);
 });
 
 // ---------- O'qituvchi: oylik statistika ----------
@@ -1715,29 +2023,74 @@ const student = {
   // Ota-ona uchun login/parolni avtomatik yaratish
   let parentUsername = b.parentUsername ? String(b.parentUsername).trim().toLowerCase() : null;
   let parentPassword = b.parentPassword ? String(b.parentPassword) : null;
-  if (!parentUsername) parentUsername = makeUsername(student.lastName, student.firstName);
-  if (!parentPassword || String(parentPassword).length < 4) parentPassword = makePassword(8);
-  parentUsername = ensureUniqueUsername(parentUsername);
+  const parentPhone = String(b.parentPhone || '').trim();
+  const normPhone = parentPhone.replace(/[^\d+]/g, '');
 
-db.store.users.push({
-    id: db.nextId('users'),
-    username: parentUsername,
-    passwordHash: db.hashPassword(parentPassword),
-    pwEnc: secrets.encrypt(parentPassword),
-    role: 'parent',
-    fullName: student.parentName || `${student.firstName} ning ota-onasi`,
-    studentId: student.id,
-    branch_id: br.branchId || null,
-  });
-  const parentUser = db.store.users[db.store.users.length - 1];
+  // Bitta ota-onaga bir nechta farzand: telefon bo'yicha mavjud hisob topiladi
+  let parentUser = null;
+  if (normPhone.length >= 9) {
+    parentUser = db.store.users.find((u) => {
+      if (u.role !== 'parent') return false;
+      const st = db.store.students.find((s) => s.id === u.studentId);
+      const up = String((st && st.parentPhone) || '').replace(/[^\d+]/g, '');
+      return up === normPhone;
+    }) || null;
+    // studentIds orqali ham qidiriladi (ota-ona ko'p farzandli bo'lsa)
+    if (!parentUser) {
+      parentUser = db.store.users.find((u) => {
+        if (u.role !== 'parent' || !Array.isArray(u.studentIds)) return false;
+        return u.studentIds.some((sid) => {
+          const st = db.store.students.find((s) => s.id === sid);
+          const up = String((st && st.parentPhone) || '').replace(/[^\d+]/g, '');
+          return up === normPhone;
+        });
+      }) || null;
+    }
+  }
+
+  let existingParent = false;
+  if (parentUser) {
+    // Mavjud ota-onaning hisobiga farzand qo'shiladi — yangi login yaratilmaydi
+    existingParent = true;
+    if (!Array.isArray(parentUser.studentIds)) {
+      parentUser.studentIds = parentUser.studentId ? [parentUser.studentId] : [];
+    }
+    if (!parentUser.studentIds.includes(student.id)) parentUser.studentIds.push(student.id);
+    if (!parentUser.studentId) parentUser.studentId = student.id;
+    parentUser.branch_id = parentUser.branch_id || br.branchId || null;
+    parentUsername = parentUser.username;
+    parentPassword = userPassword(parentUser);
+    db.saveCollection('users');
+  } else {
+    if (!parentUsername) parentUsername = makeUsername(student.lastName, student.firstName);
+    if (!parentPassword || String(parentPassword).length < 4) parentPassword = makePassword(8);
+    parentUsername = ensureUniqueUsername(parentUsername);
+
+    parentUser = {
+      id: db.nextId('users'),
+      username: parentUsername,
+      passwordHash: db.hashPassword(parentPassword),
+      pwEnc: secrets.encrypt(parentPassword),
+      role: 'parent',
+      fullName: student.parentName || `${student.firstName} ning ota-onasi`,
+      studentId: student.id,
+      studentIds: [student.id],
+      branch_id: br.branchId || null,
+    };
+    db.store.users.push(parentUser);
+  }
+  const telegramLinkUrl = telegram.configured() ? telegram.linkUrlFor(parentUser) : null;
+  telegram.ensureCode(parentUser);
 
   db.saveCollection('students');
   db.saveCollection('users');
-  // Telegram kodi o'quvchi qo'shilishi zahoti yaratiladi — bot ulansa
-  // shu kod darhol ishlaydi (ota-onaga yuborish uchun).
-  telegram.ensureCode(parentUser);
-  const telegramLinkUrl = telegram.configured() ? telegram.linkUrlFor(parentUser) : null;
-  res.status(201).json({ ...student, parentUsername, parentPassword, telegramLinkUrl });
+  res.status(201).json({
+    ...student,
+    parentUsername,
+    parentPassword: existingParent ? null : parentPassword,
+    parentExisting: existingParent,
+    telegramLinkUrl,
+  });
 });
 
 app.put('/api/students/:id', authRequired, adminOnly, async (req, res) => {
@@ -2848,7 +3201,11 @@ app.get('/api/payments', authRequired, (req, res) => {
   const year = Number(req.query.year);
 
   if (req.user.role === 'parent') {
-    const list = db.store.payments.filter((p) => p.studentId === req.user.studentId);
+    // Ota-onaning barcha farzandlarining to'lovlari
+    const pids = Array.isArray(req.user.studentIds) && req.user.studentIds.length
+      ? req.user.studentIds
+      : (req.user.studentId ? [req.user.studentId] : []);
+    const list = db.store.payments.filter((p) => pids.includes(p.studentId));
     return res.json(list);
   }
 
@@ -3077,7 +3434,17 @@ app.delete('/api/grades/:id', authRequired, adminOnly, (req, res) => {
 // ---------- Ota-ona paneli ----------
 app.get('/api/parent', authRequired, (req, res) => {
   if (req.user.role !== 'parent') return res.status(403).json({ error: 'Ruxsat yo`q' });
-  const student = db.store.students.find((s) => s.id === req.user.studentId);
+  // Ota-onaning BARCHA farzandlari (bitta login — ko'p farzand mumkin)
+  const ids = Array.isArray(req.user.studentIds) && req.user.studentIds.length
+    ? req.user.studentIds.slice()
+    : (req.user.studentId ? [req.user.studentId] : []);
+  let kids = db.store.students.filter((s) => ids.includes(s.id));
+  if (!kids.length && req.user.studentId) {
+    const one = db.store.students.find((s) => s.id === req.user.studentId);
+    if (one) kids.push(one);
+  }
+  const wantId = Number(req.query.studentId);
+  const student = (wantId ? kids.find((s) => s.id === wantId) : null) || kids[0];
   if (!student) return res.status(404).json({ error: 'Farzand topilmadi' });
   const { photo: _sp, ...studentView } = student;
   studentView.photoUrl = _sp ? '/api/students/' + student.id + '/photo' : null;
@@ -3130,7 +3497,21 @@ app.get('/api/parent', authRequired, (req, res) => {
     .sort((a, b) => b.date.localeCompare(a.date))
     .map((h) => ({ date: h.date, healthOk: !!h.healthOk, note: h.note || '' }));
 
-  res.json({ student, grades, attendance, payments, subjectAverages, avgGrade, diary, teachers, medical, todayHealth, healthHistory });
+  const children = kids.map((s) => ({
+    id: s.id,
+    lastName: s.lastName,
+    firstName: s.firstName,
+    className: s.className || '',
+    photoUrl: s.photo ? '/api/students/' + s.id + '/photo' : null,
+    branchName: branchNameById(s.branch_id) || '',
+  }));
+
+  res.json({
+    student,
+    students: children,
+    branchName: branchNameById(student.branch_id) || '',
+    grades, attendance, payments, subjectAverages, avgGrade, diary, teachers, medical, todayHealth, healthHistory,
+  });
 });
 
 // ---------- Ota-ona: farzand ma'lumotlarini o'zi tahrirlashi ----------
@@ -3139,7 +3520,12 @@ function parentOf(req, res) {
     res.status(403).json({ error: 'Ruxsat yo`q' });
     return null;
   }
-  const student = db.store.students.find((s) => s.id === req.user.studentId);
+  const wantId = Number((req.body && req.body.studentId) || req.query.studentId);
+  const ids = Array.isArray(req.user.studentIds) && req.user.studentIds.length
+    ? req.user.studentIds
+    : (req.user.studentId ? [req.user.studentId] : []);
+  const kids = db.store.students.filter((s) => ids.includes(s.id));
+  const student = (wantId ? kids.find((s) => s.id === wantId) : null) || kids[0];
   if (!student) {
     res.status(404).json({ error: 'Farzand topilmadi' });
     return null;

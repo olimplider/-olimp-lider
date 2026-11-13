@@ -397,6 +397,7 @@
 
     topbarActions.innerHTML = `<div class="toolbar">
       <button class="btn btn-outline" onclick="window.appExportWord()">${ICONS.doc.replace('width="18"', 'width="16"')} Word (docx)</button>
+      <button class="btn btn-outline" onclick="window.appImportStudents()">📥 Import (Excel/CSV)</button>
       <button class="btn btn-primary" onclick="window.appAddStudent()">${ICONS.students.replace('width="18"', 'width="16"')} O'quvchi qo'shish</button>
     </div>`;
 
@@ -626,18 +627,20 @@
 
   function showCredentialsModal(st) {
     const tgUrl = st.telegramLinkUrl || '';
+    const existing = st.parentExisting === true;
     modalContent.innerHTML = `
-      <div class="modal-header"><h3>Ota-ona kirishi yaratildi</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
+      <div class="modal-header"><h3>${existing ? 'O\'quvchi qo\'shildi' : 'Ota-ona kirishi yaratildi'}</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
       <div class="modal-body">
         <p style="margin-bottom:16px">O'quvchi <b>${escapeHtml(st.lastName)} ${escapeHtml(st.firstName)}</b> uchun ota-ona kirishi yaratildi. Quyidagi ma'lumotlarni ota-onaga topshiring:</p>
+        ${existing ? `<div class="hint" style="margin-bottom:14px">ℹ️ Bu ota-onaning logini allaqachon mavjud: <b>${escapeHtml(st.parentUsername)}</b> — ikkinchi farzand shu loginga qo'shildi (yangi login yaratilmadi). Parol o'zgarmagan.</div>` : ''}
         <div style="background:var(--card-2);border:1px solid var(--border);border-radius:12px;padding:16px 18px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
             <div><div class="muted">Login</div><div style="font-size:16px;font-weight:700" id="credUser">${escapeHtml(st.parentUsername)}</div></div>
             <button class="btn btn-outline btn-sm" onclick="window.appCopy('credUser')">Nusxalash</button>
           </div>
           <div style="display:flex;align-items:center;justify-content:space-between">
-            <div><div class="muted">Parol</div><div style="font-size:16px;font-weight:700" id="credPass">${escapeHtml(st.parentPassword)}</div></div>
-            <button class="btn btn-outline btn-sm" onclick="window.appCopy('credPass')">Nusxalash</button>
+            <div><div class="muted">Parol</div><div style="font-size:16px;font-weight:700" id="credPass">${existing ? 'O\'zgarmagan' : escapeHtml(st.parentPassword)}</div></div>
+            ${existing ? '' : `<button class="btn btn-outline btn-sm" onclick="window.appCopy('credPass')">Nusxalash</button>`}
           </div>
         </div>
         ${tgUrl ? `
@@ -2517,6 +2520,127 @@ initContact('contactTop');
       }
     });
   };
+  // ---------- O'QUVCHILARNI FAYLDAN IMPORT QILISH ----------
+  window.appImportStudents = async () => {
+    if (!isSuperRole()) return toast('Faqat super admin import qila oladi', 'error');
+    const branches = await getBranches();
+    const active = branches.filter((b) => b.is_active !== false);
+    if (!active.length) return toast('Avval filial yarating', 'error');
+
+    showModal(`
+      <div class="modal-header"><h3>O'quvchilarni import qilish</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
+      <div class="modal-body">
+        <div class="form-group"><label>Filial *</label>
+          <select id="impBranch">${active.map((b) => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('')}</select>
+        </div>
+        <div class="form-group"><label>Fayl (Excel .xlsx yoki .csv)</label>
+          <input type="file" id="impFile" accept=".xlsx,.xls,.csv">
+        </div>
+        <div class="hint">Ustun nomlari: Familya, Ism, Otasining ismi, Sinf, Tug'ilgan sana, Oylik to'lov, Ota-ona ismi, Ota-ona telefoni.<br>
+          <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="window.appImportTemplate()">📄 Shablon faylni yuklab olish</button></div>
+        <div id="impResult" style="margin-top:14px"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="window.appCloseModal()">Bekor</button>
+        <button class="btn btn-outline" id="impPreviewBtn">Tahlil qilish</button>
+        <button class="btn btn-primary" id="impGo" disabled>Yuklash</button>
+      </div>`);
+
+    let parsed = null;
+
+    document.getElementById('impPreviewBtn').addEventListener('click', async () => {
+      const f = document.getElementById('impFile').files[0];
+      if (!f) return toast('Faylni tanlang', 'error');
+      const box = document.getElementById('impResult');
+      const btn = document.getElementById('impPreviewBtn');
+      btn.disabled = true;
+      box.textContent = 'Fayl tahlil qilinmoqda...';
+      try {
+        const fd = new FormData();
+        fd.append('file', f);
+        const res = await fetch('/api/students/import/preview', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + API.getToken() },
+          body: fd,
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || 'Xatolik');
+        parsed = d;
+        const warnRows = d.rows.filter((r) => r.warnings && r.warnings.length);
+        box.innerHTML = `
+          <div class="hint" style="margin-bottom:8px"><b>${escapeHtml(d.fileName)}</b> — jami <b>${d.total}</b> ta qator topildi.</div>
+          ${d.errors.length ? `<div class="alert-error" style="display:block;margin-bottom:8px">${escapeHtml(d.errors.join(', '))}</div>` : ''}
+          ${warnRows.length ? `<div class="alert-warn" style="display:block;margin-bottom:8px">${warnRows.length} ta qator ogohlantirish bilan: ${warnRows.slice(0, 5).map((r) => escapeHtml(r.line) + '-qator: ' + escapeHtml(r.warnings.join(', '))).join('; ')}</div>` : ''}
+          <div class="table-wrap" style="max-height:260px;overflow:auto">
+            <table><thead><tr><th>Qator</th><th>Familya</th><th>Ism</th><th>Sinf</th><th>To'lov</th><th>Telefon</th></tr></thead>
+            <tbody>${d.rows.slice(0, 50).map((r) => `<tr class="${r.warnings && r.warnings.length ? 'pay-row-unpaid' : ''}">
+              <td>${r.line}</td><td>${escapeHtml(r.lastName)}</td><td>${escapeHtml(r.firstName)}</td>
+              <td>${escapeHtml(r.className || '—')}</td><td>${r.monthlyFee ? r.monthlyFee.toLocaleString('ru-RU') : '—'}</td>
+              <td>${escapeHtml(r.parentPhone || '—')}</td></tr>`).join('')}</tbody></table>
+          </div>`;
+        document.getElementById('impGo').disabled = false;
+        toast(`${d.total} ta qator tayyor`);
+      } catch (e) {
+        box.innerHTML = `<div class="alert-error" style="display:block">${escapeHtml(e.message)}</div>`;
+        parsed = null;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('impGo').addEventListener('click', async () => {
+      if (!parsed) return;
+      const btn = document.getElementById('impGo');
+      btn.disabled = true;
+      btn.textContent = 'Yuklanmoqda...';
+      try {
+        const r = await API.post('/api/students/import/confirm', {
+          rows: parsed.rows,
+          branch_id: Number(document.getElementById('impBranch').value),
+        });
+        closeModal();
+        toast(`${r.created.length} ta o'quvchi yuklandi${r.skipped ? ', ' + r.skipped + ' ta o\'tkazildi' : ''}${r.failed.length ? ', ' + r.failed.length + ' ta xato' : ''}`);
+        students = [];
+        await renderStudents();
+        if (r.created.length) {
+          showModal(`
+            <div class="modal-header"><h3>Import yakunlandi — ${r.created.length} ta o'quvchi</h3><button class="modal-close" onclick="window.appCloseModal()">×</button></div>
+            <div class="modal-body">
+              <div class="hint" style="margin-bottom:10px">Ota-onalar uchun login va Telegram havolasi:</div>
+              <div class="table-wrap" style="max-height:320px;overflow:auto">
+                <table><thead><tr><th>O'quvchi</th><th>Login</th><th>Parol</th></tr></thead>
+                <tbody>${r.created.map((c) => `<tr><td>${escapeHtml(c.lastName)} ${escapeHtml(c.firstName)}</td>
+                  <td><code>${escapeHtml(c.parentUsername)}</code></td>
+                  <td>${c.parentPassword ? `<code>${escapeHtml(c.parentPassword)}</code>` : '<span class="muted">mavjud</span>'}</td></tr>`).join('')}</tbody></table>
+              </div>
+            </div>
+            <div class="modal-actions"><button class="btn btn-primary" onclick="window.appCloseModal()">Yopish</button></div>`);
+        }
+      } catch (e) {
+        toast(e.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Yuklash';
+      }
+    });
+  };
+
+  window.appImportTemplate = async () => {
+    try {
+      const res = await fetch('/api/students/import/template', { headers: { Authorization: 'Bearer ' + API.getToken() } });
+      if (!res.ok) throw new Error('Shablon yuklanmadi');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'oquvchilar_shabloni.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
+
   window.appBulkDelete = async () => {
     const ids = selIds();
     if (!ids.length) return;

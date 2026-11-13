@@ -115,16 +115,23 @@ function linkUrlFor(user) {
 
 function linkParent(user, chatId, username) {
   const existingChat = linkForChat(chatId);
+  const kids = parentStudents(user);
+  const primary = kids.length ? kids[0].id : (user.studentId || null);
   if (existingChat) {
     existingChat.userId = user.id;
     existingChat.active = true;
     existingChat.tgUsername = username || existingChat.tgUsername;
     existingChat.linkedAt = new Date().toISOString();
+    // Tanlangan farzand — ota-onaning birinchi farzandi (boshqasi /farzand N bilan)
+    if (!existingChat.studentId || !kids.find((s) => s.id === Number(existingChat.studentId))) {
+      existingChat.studentId = primary;
+    }
   } else {
     links().push({
       id: db.nextId('telegram_links'),
       userId: user.id,
       chatId: String(chatId),
+      studentId: primary,
       tgUsername: username || '',
       linkedAt: new Date().toISOString(),
       active: true,
@@ -202,11 +209,42 @@ async function notifyParentsEach(items, kind) {
 
 function parentUserOf(student) {
   if (!student) return null;
-  return db.store.users.find((u) => u.role === 'parent' && u.studentId === student.id) || null;
+  return db.store.users.find((u) => u.role === 'parent' && u.studentId === student.id)
+    || db.store.users.find((u) => u.role === 'parent' && Array.isArray(u.studentIds) && u.studentIds.includes(student.id))
+    || null;
+}
+
+// Ota-onaning BARCHA farzandlari (bitta login — ko'p farzand)
+function parentStudents(user) {
+  if (!user) return [];
+  const ids = Array.isArray(user.studentIds) && user.studentIds.length
+    ? user.studentIds.slice()
+    : (user.studentId ? [user.studentId] : []);
+  const list = db.store.students.filter((s) => ids.includes(s.id));
+  if (!list.length && user.studentId) {
+    const one = db.store.students.find((s) => s.id === user.studentId);
+    if (one) list.push(one);
+  }
+  return list;
+}
+
+// Ota-onaning barcha farzandlariga umumiy tegishli usul
+function parentOfAnyChild(user, studentId) {
+  const kids = parentStudents(user);
+  if (!kids.length) return null;
+  const found = kids.find((s) => s.id === Number(studentId));
+  return found || kids[0];
 }
 
 function fio(s) {
   return [s.lastName, s.firstName, s.patronymic].filter(Boolean).join(' ');
+}
+
+// Maktab (filial) nomi — xabarlarda ko'rsatish uchun
+function branchLabel(student) {
+  if (!student) return '';
+  const b = (db.store.branches || []).find((x) => x.id === Number(student.branch_id));
+  return b ? b.name : '';
 }
 
 // ---------- Xabar matnlari ----------
@@ -214,23 +252,27 @@ function textAbsence(student) {
   const s = db.store.settings || {};
   const u = parentUserOf(student);
   const who = u ? (u.fullName && !/ota-onasi$/.test(u.fullName) ? u.fullName : s.phone || 'Administrator') : 'Administrator';
+  const br = branchLabel(student);
   return [
     '🔴 DAVOMAT: KELMADI',
+    br ? `🏫 ${br}` : '',
     '',
     `O'quvchi: ${fio(student)}`,
     `Sinf: ${student.className || '—'}`,
     `Sana: ${new Date().toISOString().slice(0, 10)}`,
     '',
     `Sababni o'qituvchidan so'rang. Tel: ${who}`,
-  ].join('\n');
+  ].filter((x) => x !== '').join('\n');
 }
 
 // Bitta ota-onaga: FAQAT o'z farzandining to'lovi (boshqa oila ko'rinmaydi)
 function textDebtOne(student, month, year) {
   const s = db.store.settings || {};
   const fee = Number(student.monthlyFee || 0);
+  const br = branchLabel(student);
   return [
     '💰 OYLIK TO\'LOV ESLATMASI',
+    br ? `🏫 ${br}` : '',
     '',
     'Hurmatli ota-ona,',
     `${MONTHS[month]} ${year} oyi to'lovi hali qilinmagan.`,
@@ -241,24 +283,65 @@ function textDebtOne(student, month, year) {
     '',
     'Iltimos, to\'lovni amalga oshiring.',
     `Tel: ${s.phone || 'Administrator'}`,
-  ].join('\n');
+  ].filter((x) => x !== '').join('\n');
 }
 
 function textMedical(student, expiresAt) {
+  const br = branchLabel(student);
   return [
     '🩺 TIBBIY KORIK MUDDATI',
+    br ? `🏫 ${br}` : '',
     '',
     `O'quvchi: ${fio(student)}`,
     `Sinf: ${student.className || '—'}`,
     `086-forma muddati: ${expiresAt}`,
     '',
     'Iltimos, shifokorga murojaat qiling.',
-  ].join('\n');
+  ].filter((x) => x !== '').join('\n');
+}
+
+// O'quvchi boshqa filialga ko'chirilganda ota-onaga xabar
+function textTransfer(student, fromBranch, toBranch) {
+  return [
+    '🔔 FARZANDINGIZ KO\'CHIRILDI',
+    toBranch ? `🏫 Yangi maktab: ${toBranch}` : '',
+    fromBranch ? `🏫 Oldingi maktab: ${fromBranch}` : '',
+    '',
+    `O'quvchi: ${fio(student)}`,
+    `Sinf: ${student.className || '—'}`,
+    '',
+    'Savollaringiz uchun maktab ma\'muriga murojaat qiling.',
+  ].filter((x) => x !== '').join('\n');
 }
 
 // ---------- Ota-ona buyruqlari ----------
 function parentStudent(user) {
   return db.store.students.find((s) => s.id === user.studentId) || null;
+}
+
+// Chat uchun tanlangan farzand (bir ota-onada bir nechta farzand bo'lishi mumkin)
+function selectedStudentFor(chatId) {
+  const u = parentByChat(chatId);
+  if (!u) return null;
+  const kids = parentStudents(u);
+  if (!kids.length) return null;
+  const l = linkForChat(chatId);
+  const sel = l && l.studentId ? kids.find((s) => s.id === Number(l.studentId)) : null;
+  return sel || kids[0];
+}
+
+// Tanlangan farzandni almashtirish
+function selectChild(chatId, studentId) {
+  const l = linkForChat(chatId);
+  if (!l) return null;
+  const u = parentByChat(chatId);
+  if (!u) return null;
+  const kids = parentStudents(u);
+  const found = kids.find((s) => s.id === Number(studentId));
+  if (!found) return null;
+  l.studentId = found.id;
+  db.saveCollection('telegram_links');
+  return found;
 }
 
 function cmdStart(chatId, username, code) {
@@ -274,11 +357,15 @@ function cmdStart(chatId, username, code) {
     ].join('\n'));
   }
   linkParent(u, chatId, username);
-  const st = parentStudent(u);
+  const kids = parentStudents(u);
+  const st = selectedStudentFor(chatId);
+  const br = branchLabel(st);
   return sendTo(chatId, [
     '✅ Ulanildi!',
+    br ? `🏫 ${br}` : '',
     '',
     st ? `Farzandingiz: ${fio(st)} (${st.className || '—'})` : '',
+    kids.length > 1 ? `Farzandlar soni: ${kids.length} (tanlash: /farzand 1, /farzand 2 ...)` : '',
     '',
     "Endi quyidagi buyruqlarni ishlatishingiz mumkin:",
     '  /davomat — davomat',
@@ -287,11 +374,11 @@ function cmdStart(chatId, username, code) {
     '  /jadval — dars jadvali',
     '  /farzand — ma\'lumot',
     '  /stop — uzish',
-  ].join('\n'));
+  ].filter((x) => x !== '').join('\n'));
 }
 
 function requireLink(chatId) {
-  const p = parentStudent(parentByChat(chatId));
+  const p = selectedStudentFor(chatId);
   if (!p) {
     sendTo(chatId, '⛔ Siz hali ulanmagan. Saytdan "Telegram\'ga ulash" tugmasini bosing.');
     return null;
@@ -306,7 +393,7 @@ function cmdHelp(chatId) {
     '  /baho — fanlar bo\'yicha baholar',
     '  /qarz — to\'lov holati',
     '  /jadval — haftalik dars jadvali',
-    '  /farzand — farzand ma\'lumotlari',
+    '  /farzand — farzand ma\'lumotlari (bir nechta bo\'lsa: /farzand 1, /farzand 2)',
     '  /stop — ulashni uzish',
   ].join('\n'));
 }
@@ -323,14 +410,16 @@ function cmdAttendance(chatId) {
   const counts = { present: 0, late: 0, absent: 0 };
   rows.forEach((r) => { if (counts[r.status] !== undefined) counts[r.status]++; });
   const lines = rows.slice(0, 14).map((r) => `${r.date} — ${ATT[r.status] || r.status}`);
+  const br = branchLabel(st);
   return sendTo(chatId, [
     '📋 DAVOMAT (oxirgi 14 kun)',
+    br ? `🏫 ${br}` : '',
     `${fio(st)} • ${st.className || '—'}`,
     '',
     `Keldi: ${counts.present} | Kechikdi: ${counts.late} | Kelmadi: ${counts.absent}`,
     '',
     lines.length ? lines.join('\n') : 'Bozorida yozuv yo\'q.',
-  ].join('\n'));
+  ].filter((x) => x !== '').join('\n'));
 }
 
 function cmdGrades(chatId) {
@@ -350,7 +439,8 @@ function cmdGrades(chatId) {
     const av = a.reduce((x, y) => x + y, 0) / a.length;
     return `• ${sub}: ${av.toFixed(1)} (${a.length} ta)`;
   });
-  return sendTo(chatId, ['📚 BAHOLAR', `${fio(st)} • ${st.className || '—'}`, '', `O'rtacha: ${avg.toFixed(1)}`, '', ...lines].join('\n'));
+  const brG = branchLabel(st);
+  return sendTo(chatId, ['📚 BAHOLAR', brG ? `🏫 ${brG}` : '', `${fio(st)} • ${st.className || '—'}`, '', `O'rtacha: ${avg.toFixed(1)}`, '', ...lines].filter((x) => x !== '').join('\n'));
 }
 
 function cmdDebt(chatId) {
@@ -367,15 +457,17 @@ function cmdDebt(chatId) {
     if (!p || !p.paid) rows.push(MONTHS[mo]);
   }
   const paid = db.store.payments.filter((p) => p.studentId === st.id && p.paid).length;
+  const brD = branchLabel(st);
   return sendTo(chatId, [
     '💰 TO\'LOV HOLATI',
+    brD ? `🏫 ${brD}` : '',
     `${fio(st)} • ${st.className || '—'}`,
     '',
     `Oylik to'lov: ${Number(st.monthlyFee || 0).toLocaleString('ru-RU')} so'm`,
     `To'langan oylar: ${paid}`,
     '',
     rows.length ? 'To\'lanmagan: ' + rows.join(', ') : 'Barcha to\'lovlar to\'langan ✅',
-  ].join('\n'));
+  ].filter((x) => x !== '').join('\n'));
 }
 
 function cmdSchedule(chatId) {
@@ -387,7 +479,8 @@ function cmdSchedule(chatId) {
   })();
   const rows = db.store.schedule.filter((s) => s.className === st.className);
   if (!rows.length) return sendTo(chatId, '📚 Dars jadvali hali kiritilmagan.');
-  let out = ['📚 DARS JADVALI', `${fio(st)} • ${st.className || '—'}`, ''];
+  const brS = branchLabel(st);
+  let out = ['📚 DARS JADVALI', brS ? `🏫 ${brS}` : '', `${fio(st)} • ${st.className || '—'}`, ''];
   for (let d = 1; d <= days; d++) {
     const day = rows.filter((r) => r.dayOfWeek === d).sort((a, b) => a.lessonNo - b.lessonNo);
     out.push(DAY_NAMES[d] + ':');
@@ -398,17 +491,52 @@ function cmdSchedule(chatId) {
   return sendTo(chatId, out.join('\n').trim());
 }
 
-function cmdChild(chatId) {
-  const st = requireLink(chatId);
-  if (!st) return Promise.resolve();
-  return sendTo(chatId, [
+function cmdChild(chatId, arg) {
+  const u = parentByChat(chatId);
+  if (!u) { sendTo(chatId, '⛔ Siz hali ulanmagan.'); return Promise.resolve(); }
+  const kids = parentStudents(u);
+
+  // /farzand 2 — ikkinchi farzandni tanlash
+  if (arg && /^\d+$/.test(String(arg).trim())) {
+    const idx = Number(String(arg).trim());
+    if (idx >= 1 && idx <= kids.length) {
+      const st = selectChild(chatId, kids[idx - 1].id);
+      const br = branchLabel(st);
+      return sendTo(chatId, [
+        `✅ Tanlandi: ${fio(st)} (${st.className || '—'})`,
+        br ? `🏫 ${br}` : '',
+        '',
+        'Endi /davomat, /baho, /qarz buyruqlari shu farzand uchun ishlaydi.',
+      ].filter((x) => x !== '').join('\n'));
+    }
+    return sendTo(chatId, `Bunday raqmli farzand yo'q. Sizda ${kids.length} ta farzand bor.`);
+  }
+
+  const st = selectedStudentFor(chatId);
+  if (!st) return sendTo(chatId, 'Farzand topilmadi.');
+  const br = branchLabel(st);
+  const lines = [
     '👦 FARZAND MA\'LUMOTLARI',
+    br ? `🏫 ${br}` : '',
     '',
+  ];
+  if (kids.length > 1) {
+    lines.push('Farzandlar:');
+    kids.forEach((k, i) => {
+      const active = k.id === st.id ? ' ← hozir' : '';
+      lines.push(`${i + 1}. ${fio(k)} (${k.className || '—'})${active}`);
+    });
+    lines.push('');
+    lines.push('Boshqa farzandni tanlash uchun: /farzand 1, /farzand 2 ...');
+    lines.push('');
+  }
+  lines.push(
     `F.I.Sh.: ${fio(st)}`,
     `Sinf: ${st.className || '—'}`,
     `Tug'ilgan: ${st.birthDate || '—'}`,
     `Telefon: ${st.parentPhone || '—'}`,
-  ].join('\n'));
+  );
+  return sendTo(chatId, lines.join('\n'));
 }
 
 function cmdStop(chatId) {
@@ -436,7 +564,7 @@ async function handleUpdate(u) {
     if (cmd === '/baho' || cmd === '/grades') return await cmdGrades(chatId);
     if (cmd === '/qarz' || cmd === '/debt') return await cmdDebt(chatId);
     if (cmd === '/jadval' || cmd === '/schedule') return await cmdSchedule(chatId);
-    if (cmd === '/farzand' || cmd === '/child') return await cmdChild(chatId);
+    if (cmd === '/farzand' || cmd === '/child') return await cmdChild(chatId, argRaw);
     if (cmd === '/stop') return await cmdStop(chatId);
 
     // kod bilan ulashga urinish
@@ -554,6 +682,8 @@ module.exports = {
   textAbsence,
   textDebtOne,
   textMedical,
+  textTransfer,
+  branchLabel,
   fio,
   sendTo,
 };
