@@ -65,6 +65,11 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'"],
+      // Helmet v8 default sifatida script-src-attr none qo'shadi -> inline onclick
+      // handlerlari bloklanadi. Ilova onclick="window.appX()" ni keng ishlatadi
+      // (admin panelidagi barcha tugmalar, login formasi) -> ruxsat beriladi.
+      // XSS ning asosiy himoyasi escapeHtml() da qoladi.
+      scriptSrcAttr: ["'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "blob:"],
       fontSrc: ["'self'", "data:"],
