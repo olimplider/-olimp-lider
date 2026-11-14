@@ -1,30 +1,29 @@
-﻿// =============================================================================
-//  OLIMP-LIDER вЂ” PM2 ecosystem
-//  Oracle instance'da PM2 boshqaruvchi uchun.
+// =============================================================================
+//  OLIMP-LIDER — PM2 ecosystem
+//  Barcha yo'llar __dirname ga nisbatan -> server root da ishlaydi
+//  (root yoki ubuntu, x86 yoki ARM, /root/olimp yoki /home/ubuntu/olimp)
 //
 //  Ishga tushirish:
 //    pm2 start ecosystem.config.cjs --only olimp
 //    pm2 save && pm2 startup
-//
-//  Muhit o'zgaruvchilari .env.local'dan o'qiladi (server/index.js uni o'zi
-//  yuklaydi) вЂ” shuning uchun bu yerda qo'shimcha o'zgaruvchi kerak emas.
 // =============================================================================
+const path = require('path');
+
 module.exports = {
   apps: [
     {
       name: 'olimp',
-      script: 'server/index.js',
-      cwd: '/home/ubuntu/olimp',
-      instances: 1,            // 1 ta instance: SQLite/Neon kesh va PM2 cluster moslashuvi
+      script: path.join(__dirname, 'server', 'index.js'),
+      cwd: __dirname,
+      instances: 1,            // 1 ta instance (Neon kesh va PM2 cluster moslashuvi)
       exec_mode: 'fork',
       autorestart: true,
       max_restarts: 10,
       min_uptime: '20s',
       restart_delay: 3000,
-      max_memory_restart: '600M',   // A1 (12 GB) bilan xavfsiz; E2.Micro (1 GB) da bu limit past
+      max_memory_restart: '600M',   // 1 GB RAM server uchun xavfsiz
 
-      // .env.local ni avtomatik yuklash
-      // 1 GB RAM server uchun heap limiti (OS + native xotira joy qoldiriladi)
+      // 1 GB RAM server uchun Node heap limiti (OS + native xotira joy qoldiriladi)
       node_args: ['--max-old-space-size=600'],
 
       env: {
@@ -33,8 +32,8 @@ module.exports = {
       },
 
       // Log fayllari
-      out_file: '/home/ubuntu/olimp/logs/out.log',
-      error_file: '/home/ubuntu/olimp/logs/error.log',
+      out_file: path.join(__dirname, 'logs', 'out.log'),
+      error_file: path.join(__dirname, 'logs', 'error.log'),
       merge_logs: true,
       time: true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
@@ -43,4 +42,3 @@ module.exports = {
     },
   ],
 };
-
