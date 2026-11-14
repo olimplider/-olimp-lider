@@ -16,8 +16,10 @@
   const topbarActions = document.getElementById('topbarActions');
 
   // Filial paneli sarlavhasini o'rnatish
+  // branchName butun skriptda ishlatiladi (masalan Telegram panelida) ->
+  // uni if blokidan tashqarida e'lon qilamiz, aks holda ReferenceError bo'ladi.
+  const branchName = API.getBranchName();
   if (isBranchAdmin) {
-    const branchName = API.getBranchName();
     if (branchName) {
       document.getElementById('pageTitle').textContent = 'Dashbord';
       const h2 = document.querySelector('.sidebar-header h2');
@@ -283,10 +285,7 @@
   async function navigateTo(section) {
     currentSection = section;
     pageTitle.textContent = NAV_TITLES[section];
-    topbarActions.innerHTML = `<div class="toolbar">
-      <button class="btn btn-outline" onclick="window.appTgExportCsv()">Havolalarni CSV</button>
-      <button class="btn btn-outline" onclick="window.appTgCopyAll()">Hammasini nusxalash</button>
-    </div>`;
+    topbarActions.innerHTML = '';
     content.innerHTML = '<div class="empty-state">Yuklanmoqda...</div>';
     try {
       if (section === 'dashboard') await renderDashboard();
@@ -2195,7 +2194,10 @@ initContact('contactTop');
   let tgData = null;
 
   async function renderTelegram() {
-    topbarActions.innerHTML = '';
+    topbarActions.innerHTML = `<div class="toolbar">
+      <button class="btn btn-outline" onclick="window.appTgExportCsv()">Havolalarni CSV</button>
+      <button class="btn btn-outline" onclick="window.appTgCopyAll()">Hammasini nusxalash</button>
+    </div>`;
     let d;
     try {
       d = await API.get('/api/telegram/status');
