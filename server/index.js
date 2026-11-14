@@ -1,3 +1,6 @@
+// ---------- .env.local (maxfiy kalitlar) — BARCHA modullardan OLDIN yuklanadi ----------
+require('./load-env');
+
 const express = require('express');
 const path = require('path');
 const fs = require('fs');

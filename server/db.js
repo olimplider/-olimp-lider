@@ -1,3 +1,6 @@
+// .env.local (DATABASE_URL) — db.js process.env ni o'qishidan OLDIN yuklanadi
+require('./load-env');
+
 const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');

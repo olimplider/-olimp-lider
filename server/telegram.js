@@ -1,4 +1,5 @@
 // ---------- Telegram bot integratsiyasi ----------
+require('./load-env');
 // Token .env.local -> TELEGRAM_BOT_TOKEN (git'ga tushmaydi).
 // Telegram serverga faqat "Start" bosgan odamlarni taniydi, shuning uchun
 // ota-ona bir marta kodli havolaga (t.me/<bot>?start=<kod>) bosadi.
