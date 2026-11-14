@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 #  OLIMP-LIDER — zaxirani kompyuterga tortish (pull)
 #  Windows Task Scheduler orqali har kuni avtomatik ishlaydi.
 #
