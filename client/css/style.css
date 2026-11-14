@@ -1916,38 +1916,62 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
   .insignia__gloss { animation-duration: 9s; }
 }
 
-
 /* ============================================================================
-   3D CHUQURLIK ("Depth") — tez va silliq
+   3D CHUQURLIK V2 — ANIQ SEZILADIGAN, ammo tez
    ----------------------------------------------------------------------------
-   QOIDALAR (bu qatlam shu tarzda yozilgan):
-   1) Faqat `transform` va `opacity` animatsiya qilinadi -> GPU kompozit, silliq
-   2) `box-shadow` ANIMATSIYA qilinmaydi (qayta chizish qimmat) - faqat statik
-   3) `filter` / `backdrop-filter` animatsiya qilinmaydi
-   4) `perspective()` transform funksiyasi ishlatiladi (ota element shart emas)
-   5) `prefers-reduced-motion` da hammasi o'chadi
-   6) `transition: all` ishlatilmaydi - aniq property'lar
-   7) Sticky elementlarga (sidebar, topbar) transform BERILMAYDI - sticky buziladi
+   Nima o'zgardi (V1 juda yumshoq edi, ko'rinmasdi):
+     * Kuchliroq perspektiva: kartada 520px (900px emas) -> chuqurlik seziladi
+     * Ikonka kartadan ANCHA OLDINDA turadi: translateZ 46px
+     * Kirish animatsiyasi: kartalar pastdan aylanib uchib keladi (stagger)
+     * Butun kontent maydoni sichqoncha harakatiga qarab egiladi (JS bilan)
+     * 3D "pol" foni (perspective grid, statik)
+   Performance qoidalari o'zgarmagan:
+     - faqat transform/opacity, box-shadow animatsiyasi yo'q
+     - sticky elementlarga transform berilmaydi
+     - reduced-motion / touch qurilmalarda o'chadi
    ========================================================================== */
 
 :root {
-  --z-persp-panel: 1100px;
-  --z-persp-card: 900px;
-  --z-persp-btn: 600px;
-  --z-persp-nav: 700px;
-  --z-lift: -6px;
-  --z-tilt-x: 3.2deg;
-  --z-tilt-y: -1.6deg;
-  --z-depth-icon: 24px;
-  --z-depth-value: 11px;
-  --z-depth-badge: 14px;
+  --z-persp-panel: 1200px;
+  --z-persp-card: 520px;      /* V1: 900px -> endi chuqurlik seziladi */
+  --z-persp-btn: 460px;
+  --z-persp-nav: 560px;
+  --z-lift: -10px;
+  --z-tilt-x: 9deg;          /* V1: 3.2deg */
+  --z-tilt-y: -5deg;         /* V1: -1.6deg */
+  --z-depth-icon: 46px;       /* V1: 24px */
+  --z-depth-value: 20px;      /* V1: 11px */
+  --z-depth-badge: 16px;
 }
+
+/* ------------------------------------------------------- KIRISH ANIMATSIYASI --- */
+/* Kartalar pastdan aylanib uchib keladi. Har bir render'da qayta oynaydi
+   (bo'limga o'tishda chiroyli o'tish bo'ladi). */
+@keyframes depthFlyIn {
+  from { opacity: 0; transform: perspective(900px) translateY(44px) rotateX(18deg) scale(.90); }
+  to   { opacity: 1; transform: perspective(900px) translateY(0) rotateX(0) scale(1); }
+}
+.panel {
+  animation: depthFlyIn .5s var(--ease) both;
+}
+.stat-card {
+  animation: depthFlyIn .45s var(--ease) both;
+}
+/* Stats kartalar ketma-ket (stagger) */
+.stat-card:nth-child(1) { animation-delay: .04s; }
+.stat-card:nth-child(2) { animation-delay: .09s; }
+.stat-card:nth-child(3) { animation-delay: .14s; }
+.stat-card:nth-child(4) { animation-delay: .19s; }
+.stat-card:nth-child(5) { animation-delay: .24s; }
+.stat-card:nth-child(6) { animation-delay: .29s; }
+.stat-card:nth-child(7) { animation-delay: .34s; }
+.stat-card:nth-child(8) { animation-delay: .39s; }
 
 /* ---------------------------------------------------------------- KARTA --- */
 .stat-card {
   transform-style: preserve-3d;
   transform: perspective(var(--z-persp-card));
-  transition: transform .3s var(--ease);
+  transition: transform .28s var(--ease);
 }
 .stat-card:hover {
   transform: perspective(var(--z-persp-card))
@@ -1955,24 +1979,25 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
              rotateX(var(--z-tilt-x))
              rotateY(var(--z-tilt-y));
 }
-/* Ichki qatlamlar - kartaning egilishi bilan parallaks hosil bo'ladi */
+/* Ikonka kartadan ANCHA oldinda turadi -> aniq chuqurlik */
 .stat-card .stat-icon {
   transform: translateZ(var(--z-depth-icon));
-  transition: transform .3s var(--ease);
+  transition: transform .28s var(--ease);
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, .55));
 }
 .stat-card .stat-value {
   transform: translateZ(var(--z-depth-value));
-  transition: transform .3s var(--ease);
+  transition: transform .28s var(--ease);
 }
 .stat-card .stat-label {
-  transform: translateZ(4px);
-  transition: transform .3s var(--ease);
+  transform: translateZ(6px);
+  transition: transform .28s var(--ease);
 }
 .stat-card:hover .stat-icon {
-  transform: translateZ(calc(var(--z-depth-icon) + 8px));
+  transform: translateZ(calc(var(--z-depth-icon) + 14px));
 }
 .stat-card:hover .stat-value {
-  transform: translateZ(calc(var(--z-depth-value) + 5px));
+  transform: translateZ(calc(var(--z-depth-value) + 8px));
 }
 
 /* --------------------------------------------------------------- PANEL --- */
@@ -1982,37 +2007,37 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
   transition: transform .3s var(--ease), border-color .3s var(--ease);
 }
 .panel:hover {
-  transform: perspective(var(--z-persp-panel)) translateY(-3px) rotateX(1deg);
+  transform: perspective(var(--z-persp-panel)) translateY(-4px) rotateX(2deg);
 }
+/* Panel sarlavhasi qatlami oldinga chiqadi */
 .panel-header {
-  transform: translateZ(6px);
+  transform: translateZ(10px);
   transition: transform .3s var(--ease);
 }
 .panel:hover .panel-header {
-  transform: translateZ(10px);
+  transform: translateZ(16px);
 }
 
 /* -------------------------------------------------------------- TUGMA --- */
 .btn {
   transform-style: preserve-3d;
   transform: perspective(var(--z-persp-btn)) translateZ(0);
-  transition: transform .16s var(--ease),
-              box-shadow .16s var(--ease),
-              background-color .16s var(--ease),
-              border-color .16s var(--ease);
+  transition: transform .15s var(--ease),
+              box-shadow .15s var(--ease),
+              background-color .15s var(--ease),
+              border-color .15s var(--ease);
 }
 .btn:hover {
-  transform: perspective(var(--z-persp-btn)) translateY(-2px) translateZ(9px);
+  transform: perspective(var(--z-persp-btn)) translateY(-3px) translateZ(16px);
 }
 .btn:active {
-  transform: perspective(var(--z-persp-btn)) translateY(1px) translateZ(0) scale(.985);
+  transform: perspective(var(--z-persp-btn)) translateY(2px) translateZ(0) scale(.97);
 }
 .btn:focus-visible {
-  transform: perspective(var(--z-persp-btn)) translateZ(4px);
+  transform: perspective(var(--z-persp-btn)) translateZ(8px);
 }
 
 /* --------------------------------------------------------------- YORLIQ --- */
-/* Yorug'lik yoyi - transform bilan (GPU tez), opacity bilan yo'qoladi */
 .stat-card::after,
 .panel::after {
   content: "";
@@ -2021,26 +2046,26 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
   border-radius: inherit;
   pointer-events: none;
   opacity: 0;
-  background: linear-gradient(115deg, transparent 35%, rgba(255, 246, 214, .10) 50%, transparent 65%);
-  transform: translateX(-70%);
-  transition: transform .65s var(--ease), opacity .3s var(--ease);
+  background: linear-gradient(115deg, transparent 32%, rgba(255, 246, 214, .16) 50%, transparent 68%);
+  transform: translateX(-80%);
+  transition: transform .7s var(--ease), opacity .3s var(--ease);
   z-index: 2;
 }
 .stat-card:hover::after,
 .panel:hover::after {
   opacity: 1;
-  transform: translateX(70%);
+  transform: translateX(80%);
 }
 
 /* ---------------------------------------------------------------- AVATAR --- */
 .student-cell img,
 .student-cell .av {
   transform: translateZ(var(--z-depth-badge));
-  transition: transform .3s var(--ease);
+  transition: transform .28s var(--ease);
 }
 tr:hover .student-cell img,
 tr:hover .student-cell .av {
-  transform: translateZ(calc(var(--z-depth-badge) + 7px));
+  transform: translateZ(calc(var(--z-depth-badge) + 10px));
 }
 
 /* ---------------------------------------------------------------- JADVAL --- */
@@ -2048,21 +2073,21 @@ tr:hover .student-cell .av {
   transition: background-color .18s var(--ease), transform .18s var(--ease);
 }
 .table-wrap tbody tr:hover {
-  transform: translateX(3px) translateZ(2px);
+  transform: translateX(5px) translateZ(4px);
 }
 .table-wrap tbody td {
   transition: transform .18s var(--ease);
 }
 .table-wrap tbody tr:hover td {
-  transform: translateZ(3px);
+  transform: translateZ(5px);
 }
 
 /* --------------------------------------------------------------- MODAL --- */
 .modal-overlay.open .modal {
-  animation: modalInDepth .34s var(--ease);
+  animation: modalInDepth .36s var(--ease);
 }
 @keyframes modalInDepth {
-  from { opacity: 0; transform: perspective(900px) rotateX(-7deg) translateY(28px) scale(.96); }
+  from { opacity: 0; transform: perspective(900px) rotateX(-12deg) translateY(46px) scale(.92); }
   to   { opacity: 1; transform: perspective(900px) rotateX(0) translateY(0) scale(1); }
 }
 .modal {
@@ -2071,8 +2096,6 @@ tr:hover .student-cell .av {
 
 /* ------------------------------------------------------------ SIDEBAR --- */
 .sidebar {
-  /* backdrop-filter butun ekran bo'ylab qayta chizilardi (juda qimmat).
-     Buning o'rniga statik gradient - bir xil ko'rinish, ~10x tezroq. */
   background: linear-gradient(180deg, rgba(5, 7, 8, .96), rgba(8, 11, 8, .97));
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -2082,53 +2105,60 @@ tr:hover .student-cell .av {
   transition: transform .2s var(--ease), background-color .2s var(--ease), color .2s var(--ease);
 }
 .nav-item:hover {
-  transform: perspective(var(--z-persp-nav)) translateX(4px);
+  transform: perspective(var(--z-persp-nav)) translateX(7px) translateZ(14px);
 }
 .nav-item.active {
-  transform: perspective(var(--z-persp-nav)) translateX(6px);
+  transform: perspective(var(--z-persp-nav)) translateX(10px) translateZ(18px);
 }
 
 /* -------------------------------------------------------------- TOPBAR --- */
 .topbar {
-  /* Sticky elementga transform berilsa, sticky ishi buziladi ->
-     chuqurlik faqat soya va chegara orqali beriladi. */
   background: linear-gradient(180deg, rgba(15, 19, 13, .97), rgba(13, 16, 11, .95));
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow: 0 10px 30px -18px rgba(0, 0, 0, .9);
 }
 
-/* --------------------------------------------------------- KIRISH SAHIFA --- */
-/* JS sichqoncha harakati uchun inline transform yozadi -> CSS faqat
-   zaxira (fallback) sifatida ishlaydi. */
+/* ----------------------------------------------------------- KIRISH SAHIFA --- */
 .login-card {
   transform-style: preserve-3d;
   transform: perspective(1100px);
 }
-.login-card .welcome-title {
-  transform: translateZ(10px);
-}
-.login-card .form-group {
-  transform: translateZ(4px);
-}
-.insignia {
-  transform: translateZ(20px);
-}
-.insignia__brackets {
-  transform: translateZ(8px);
-}
-.insignia__gloss {
-  transform: translateZ(14px);
+.login-card .welcome-title { transform: translateZ(16px); }
+.login-card .form-group { transform: translateZ(6px); }
+.insignia { transform: translateZ(26px); }
+.insignia__brackets { transform: translateZ(10px); }
+.insignia__gloss { transform: translateZ(18px); }
+
+/* ---------------------------------------------------- 3D "POL" FONI --- */
+/* Perspektivli to'r (statik - animatsiya qilinmaydi, arzon) */
+.app::before {
+  content: "";
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 46vh;
+  pointer-events: none;
+  z-index: 0;
+  opacity: .5;
+  background-image:
+    linear-gradient(rgba(212, 175, 55, .10) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(212, 175, 55, .08) 1px, transparent 1px);
+  background-size: 46px 46px;
+  transform: perspective(520px) rotateX(66deg);
+  transform-origin: bottom center;
+  mask-image: linear-gradient(to top, rgba(0, 0, 0, .85), transparent 88%);
+  -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 85%), transparent 88%);
 }
 
 /* ------------------------------------------------------------- O'CHISH --- */
 @media (prefers-reduced-motion: reduce) {
+  .panel,
   .stat-card,
   .stat-card .stat-icon,
   .stat-card .stat-value,
   .stat-card .stat-label,
-  .panel,
-  .panel-header,
   .btn,
   .nav-item,
   .student-cell img,
@@ -2143,6 +2173,7 @@ tr:hover .student-cell .av {
   }
   .stat-card::after,
   .panel::after { display: none; }
+  .app::before { display: none; }
 }
 
 /* --------------------------------------------------- TELEFON (touch) --- */
@@ -2155,5 +2186,5 @@ tr:hover .student-cell .av {
   .panel::after { display: none; }
   .nav-item:hover,
   .nav-item.active { transform: none; }
+  .app::before { opacity: .28; }
 }
-
