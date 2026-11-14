@@ -1,5 +1,5 @@
-// =============================================================================
-//  OLIMP-LIDER — PM2 ecosystem
+﻿// =============================================================================
+//  OLIMP-LIDER вЂ” PM2 ecosystem
 //  Oracle instance'da PM2 boshqaruvchi uchun.
 //
 //  Ishga tushirish:
@@ -7,7 +7,7 @@
 //    pm2 save && pm2 startup
 //
 //  Muhit o'zgaruvchilari .env.local'dan o'qiladi (server/index.js uni o'zi
-//  yuklaydi) — shuning uchun bu yerda qo'shimcha o'zgaruvchi kerak emas.
+//  yuklaydi) вЂ” shuning uchun bu yerda qo'shimcha o'zgaruvchi kerak emas.
 // =============================================================================
 module.exports = {
   apps: [
@@ -24,7 +24,8 @@ module.exports = {
       max_memory_restart: '600M',   // A1 (12 GB) bilan xavfsiz; E2.Micro (1 GB) da bu limit past
 
       // .env.local ni avtomatik yuklash
-      node_args: [],
+      // 1 GB RAM server uchun heap limiti (OS + native xotira joy qoldiriladi)
+      node_args: ['--max-old-space-size=600'],
 
       env: {
         NODE_ENV: 'production',
@@ -42,3 +43,4 @@ module.exports = {
     },
   ],
 };
+
