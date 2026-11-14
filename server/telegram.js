@@ -681,6 +681,8 @@ module.exports = {
   notifyParentsEach,
   parentUserOf,
   parentStudents,
+  linkParent,
+  cmdStart,
   textAbsence,
   textDebtOne,
   textMedical,
