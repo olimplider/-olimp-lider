@@ -2366,7 +2366,7 @@ initContact('contactTop');
       const cell = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
       const lines = [head.map(cell).join(';')];
       for (const r of rows) {
-        lines.push([r.className, r.student, r.username, r.username, r.password, r.phone].map(cell).join(';'));
+        lines.push([r.className, r.student, r.parentName || r.username, r.username, r.password, r.phone].map(cell).join(';'));
       }
       const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
       const a = document.createElement('a');

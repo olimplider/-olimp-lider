@@ -3263,6 +3263,7 @@ app.get('/api/parents/credentials', authRequired, adminOnly, (req, res) => {
     rows.push({
       userId: u.id,
       username: u.username,
+      parentName: u.fullName || '',
       password: pw,
       student: st ? (st.lastName + ' ' + st.firstName).trim() : '',
       className: st ? (st.className || '') : '',
