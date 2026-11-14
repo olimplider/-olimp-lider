@@ -286,3 +286,46 @@ function renderYearsSelect() {
   const y = new Date().getFullYear();
   return `<option>${y}</option><option>${y + 1}</option>`;
 }
+
+// ---------- 3D CHUQURLIK: kontent maydoni sichqoncha harakatiga egiladi ----------
+// Faqat transform o'zgaradi (GPU kompozit) -> silliq.
+// Ekran bo'yicha nisbiy hisoblanadi -> o'lchash muammosi yo'q (transform
+// getBoundingClientRect ni buzadi, lekin biz hech narsa o'lchamaymiz).
+function initDepth3D() {
+  const content = document.getElementById('content');
+  if (!content) return;
+  // Faqat sichqoncha va sichqonchani yo'qotmagan qurilmalar
+  if (!window.matchMedia('(pointer: fine)').matches) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  const MAX_X = 5.5;   // vertikal egilish (darajada)
+  const MAX_Y = 7.5;   // gorizontal egilish (darajada)
+  let raf = null;
+
+  const apply = (rx, ry) => {
+    content.style.transform =
+      'perspective(1800px) rotateX(' + rx + 'deg) rotateY(' + ry + 'deg)';
+  };
+  const reset = () => { content.style.transform = ''; };
+
+  document.addEventListener('pointermove', (e) => {
+    const x = (e.clientX / window.innerWidth - 0.5);
+    const y = (e.clientY / window.innerHeight - 0.5);
+    if (raf) cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => {
+      apply((-y * MAX_X).toFixed(2), (x * MAX_Y).toFixed(2));
+    });
+  }, { passive: true });
+
+  document.addEventListener('pointerleave', reset);
+  window.addEventListener('blur', reset);
+}
+window.initDepth3D = initDepth3D;
+
+// Sahifa tayyor bo'lganda ishga tushirish (skriptlar body oxirida bo'lsa
+// darhol ham chaqiriladi)
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initDepth3D);
+} else {
+  initDepth3D();
+}
