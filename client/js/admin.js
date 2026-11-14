@@ -283,7 +283,10 @@
   async function navigateTo(section) {
     currentSection = section;
     pageTitle.textContent = NAV_TITLES[section];
-    topbarActions.innerHTML = '';
+    topbarActions.innerHTML = `<div class="toolbar">
+      <button class="btn btn-outline" onclick="window.appTgExportCsv()">Havolalarni CSV</button>
+      <button class="btn btn-outline" onclick="window.appTgCopyAll()">Hammasini nusxalash</button>
+    </div>`;
     content.innerHTML = '<div class="empty-state">Yuklanmoqda...</div>';
     try {
       if (section === 'dashboard') await renderDashboard();
@@ -2312,6 +2315,43 @@ initContact('contactTop');
   };
 
   window.appTgRemind = () => toast('Eslatma endi "Oylik to\'lovlar" bo\'limidan yuboriladi');
+
+  // ---------- Telegram havolalarini eksport qilish ----------
+  async function tgLinks() {
+    return await API.get('/api/telegram/links');
+  }
+
+  window.appTgExportCsv = async () => {
+    try {
+      const d = await tgLinks();
+      const rows = d.rows || [];
+      const head = ['O\'quvchi', 'Sinf', 'Ota-ona', 'Login', 'Telefon', 'Telegram havolasi', 'Holat'];
+      const cell = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+      const lines = [head.map(cell).join(';')];
+      for (const r of rows) {
+        lines.push([r.student, r.className, r.fullName || r.username, r.username, r.phone, r.linkUrl, r.linked ? 'ulangan' : 'ulanmagan'].map(cell).join(';'));
+      }
+      // Excel uchun BOM + ';' ajratgichi (ru/uz Excel to'g'ri ochadi)
+      const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'telegram_havolalar_' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      toast(rows.length + ' ta havola yuklandi');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.appTgCopyAll = async () => {
+    try {
+      const d = await tgLinks();
+      const rows = (d.rows || []).filter((r) => !r.linked);
+      if (!rows.length) { toast('Barcha ota-onalar ulangan'); return; }
+      const txt = rows.map((r) => r.student + ' | ' + r.username + ' | ' + r.linkUrl).join('\n');
+      await navigator.clipboard.writeText(txt);
+      toast(rows.length + ' ta havola nusxalandi');
+    } catch (e) { toast(e.message, 'error'); }
+  };
 
   window.appTgLink = async (userId) => {
     try {

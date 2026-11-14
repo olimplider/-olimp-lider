@@ -680,6 +680,7 @@ module.exports = {
   notifyParents,
   notifyParentsEach,
   parentUserOf,
+  parentStudents,
   textAbsence,
   textDebtOne,
   textMedical,

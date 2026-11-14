@@ -1325,6 +1325,15 @@ app.get('/api/teacher/students', authRequired, teacherOnly, (req, res) => {
   const list = sortStudents(teacherStudents(req, teacher, className)).map((s) => {
     const { photo, ...rest } = s;
     return { ...rest, photoUrl: photo ? '/api/students/' + s.id + '/photo' : null };
+    const parent = telegram.parentUserOf(s);
+    const link = parent ? activeLinks.get(parent.id) : null;
+    return {
+      ...rest,
+      photoUrl: photo ? '/api/students/' + s.id + '/photo' : null,
+      parentUsername: parent ? parent.username : null,
+      telegramLinkUrl: parent ? telegram.linkUrlFor(parent) : null,
+      telegramLinked: !!link,
+    };
   });
   res.json(list);
 });
@@ -1991,10 +2000,50 @@ app.get('/api/teacher/stats', authRequired, teacherOnly, (req, res) => {
 // ---------- O'quvchilar ----------
 app.get('/api/students', authRequired, adminOnly, (req, res) => {
   const list = scopeByBranch(req, db.store.students);
+  const activeLinks = new Map();
+  for (const l of telegram.links()) { if (l.active) activeLinks.set(l.userId, l); }
   res.json(sortStudents(list).map((s) => {
     const { photo, ...rest } = s;
     return { ...rest, photoUrl: photo ? '/api/students/' + s.id + '/photo' : null };
   }));
+});
+
+app.post('/api/students', authRequired, adminOnly, (req, res) => {});
+
+// ---------- Telegram havolalari (barcha ota-onalar uchun) ----------
+// Maktab ota-onalarga havolani tarqatishi uchun: jadval, nusxalash, CSV.
+app.get('/api/telegram/links', authRequired, adminOnly, (req, res) => {
+  const activeLinks = new Map();
+  for (const l of telegram.links()) { if (l.active) activeLinks.set(l.userId, l); }
+  const superUser = req.user.role === 'admin' || req.user.role === 'super_admin';
+  const rows = [];
+  for (const u of db.store.users) {
+    if (u.role !== 'parent') continue;
+    if (!superUser && Number(u.branch_id) !== Number(req.user.branch_id)) continue;
+    const kids = telegram.parentStudents(u);
+    const st = kids[0] || null;
+    const l = activeLinks.get(u.id);
+    rows.push({
+      userId: u.id,
+      username: u.username,
+      fullName: u.fullName || (st ? st.parentName : ''),
+      phone: st ? (st.parentPhone || '') : '',
+      student: st ? (st.lastName + ' ' + st.firstName).trim() : '',
+      className: st ? (st.className || '') : '',
+      children: kids.length,
+      linkUrl: telegram.linkUrlFor(u),
+      linked: !!l,
+      linkedAt: l ? l.linkedAt : null,
+      tgUsername: l ? (l.tgUsername || '') : '',
+    });
+  }
+  rows.sort((a, b) => String(a.student).localeCompare(String(b.student)));
+  res.json({
+    bot: telegram.botInfo(),
+    rows,
+    total: rows.length,
+    linked: rows.filter((r) => r.linked).length,
+  });
 });
 
 app.post('/api/students', authRequired, adminOnly, (req, res) => {

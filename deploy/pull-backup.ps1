@@ -95,14 +95,22 @@ Log "Serverda zaxiralar: $($names.Count) ta, eng yangisi: $($names[0])"
 # --- 2) Allaqachon tortilganmi ---
 $target = $null
 foreach ($n in $names) { if (-not (Test-Path (Join-Path $LocalRoot $n))) { $target = $n; break } }
-if (-not $target) { Log "Barcha zaxiralar allaqachon mahalliyda. Chiqish."; exit 0 }
-Log "Tortilmoqda: $target"
+if ($target) {
+  Log "Tortilmoqda: $target"
 
-# --- 3) scp bilan tortish ---
-$dest = Join-Path $LocalRoot $target
-$r2 = Run-Exe $SCP (@($optScp + @("-r", "${Server}:$RemoteRoot/$target", $LocalRoot))) 600
-if (-not (Test-Path $dest)) { Log "XATO: tayyorlanmadi! $($r2.err)"; exit 1 }
-Log "Tortildi: $target"
+  # --- 3) scp bilan tortish ---
+  $dest = Join-Path $LocalRoot $target
+  $r2 = Run-Exe $SCP (@($optScp + @("-r", "${Server}:$RemoteRoot/$target", $LocalRoot))) 600
+  if (-not (Test-Path $dest)) { Log "XATO: tayyorlanmadi! $($r2.err)"; exit 1 }
+  Log "Tortildi: $target"
+} else {
+  Log "Barcha zaxiralar allaqachon mahalliyda (tortish shart emas)."
+  # GitHub push uchun eng yangi mahalliy zaxirani ishlatamiz
+  $target = (Get-ChildItem $LocalRoot -Directory | Where-Object { $_.Name -match '^\d{4}-' } |
+             Sort-Object Name -Descending | Select-Object -First 1).Name
+  if (-not $target) { Log "Mahalliy zaxira ham yo'q. Chiqish."; exit 0 }
+  $dest = Join-Path $LocalRoot $target
+}
 
 # --- 4) Checksum tekshiruv ---
 $metaFile = Join-Path $dest "meta.json"
@@ -137,6 +145,66 @@ foreach ($m in $MirrorDirs) {
     Copy-Item -Path (Join-Path $LocalRoot $target) -Destination $m -Recurse -Force -ErrorAction Stop
     Log "Nusxa: $m"
   } catch { Log "Nusxa o'tkazilmadi ($m) - xato: $($_.Exception.Message.Split([char]10)[0])" }
+}
+
+# --- 7) GitHub'ga yuborish (private repo) ---
+# Faqat DB + uploads + meta. env.local.bak (maxfiy kalitlar) GitHub'ga
+# YUBORILMAYDI - u faqat kompyuterning o'zida va serverda saqlanadi.
+$GitHubRepo = "https://github.com/olimplider/olimp-backups.git"
+$GitWork    = "C:\olimp-backups-repo"
+try {
+  $gitExe = "C:\Program Files\Git\cmd\git.exe"
+  if (-not (Test-Path $gitExe)) { $gitExe = (Get-Command git -ErrorAction SilentlyContinue).Source }
+
+  if (-not (Test-Path (Join-Path $GitWork ".git"))) {
+    New-Item -ItemType Directory -Path $GitWork -Force | Out-Null
+    & $gitExe -C $GitWork init -q -b main 2>&1 | Out-Null
+    & $gitExe -C $GitWork remote add origin $GitHubRepo 2>&1 | Out-Null
+    Log "GitHub repo tayyorlandi (mahalliy nusxa)"
+  }
+  # git hech qachon so'ramasligi uchun:
+  & $gitExe -C $GitWork config user.name "OLIMP-LIDER Backup" 2>&1 | Out-Null
+  & $gitExe -C $GitWork config user.email "backup@olimplider.uz" 2>&1 | Out-Null
+  & $gitExe -C $GitWork config core.autocrlf false 2>&1 | Out-Null
+  # GCM SYSTEM ostida dialog ochib osilib qoladi -> oddiy store helper
+  $credFile = "C:/olimp-keys/git-credentials"
+  if (Test-Path ($credFile -replace "/", "\")) {
+    & $gitExe -C $GitWork config credential.helper "store --file=$credFile" 2>&1 | Out-Null
+  }
+  # Eng yangi zaxira fayllarini nusxalash
+  $stage = Join-Path $GitWork "latest"
+  New-Item -ItemType Directory -Path $stage -Force | Out-Null
+  Get-ChildItem $stage -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+  foreach ($f in @("db.json.gz", "uploads.tar.gz", "meta.json")) {
+    $src = Join-Path $dest $f
+    if (Test-Path $src) { Copy-Item $src (Join-Path $stage $f) -Force }
+  }
+  # eskirgan zaxiralarni (faqat oxirgi 7 kun) working tree'da saqlash
+  $keep = Get-ChildItem $LocalRoot -Directory | Where-Object { $_.Name -match '^\d{4}-' } |
+          Sort-Object Name -Descending | Select-Object -First 7
+  foreach ($k in $keep) {
+    $d = Join-Path $GitWork $k.Name
+    if (-not (Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
+    foreach ($f in @("db.json.gz", "uploads.tar.gz", "meta.json")) {
+      $s = Join-Path $k.FullName $f
+      if (Test-Path $s) { Copy-Item $s (Join-Path $d $f) -Force }
+    }
+  }
+  # eskirganlarni working tree'dan olib tashlash (git history'da qoladi)
+  Get-ChildItem $GitWork -Directory | Where-Object {
+    $_.Name -match '^\d{4}-' -and $_.Name -notin $keep.Name
+  } | ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+
+  & $gitExe -C $GitWork add -A 2>&1 | Out-Null
+  $msg = "zaxira: $target (o'quvchilar=$($meta.counts.students))"
+  $null = & $gitExe -C $GitWork commit -q -m $msg 2>&1
+  # push ni timeout bilan: GCM dialog SYSTEM ostida osilib qolishi mumkin
+  $env:GIT_TERMINAL_PROMPT = "0"
+  $pr = Run-Exe $gitExe (@("-C", $GitWork, "push", "origin", "main")) 180
+  if ($pr.code -eq 0) { Log "GitHub'ga yuborildi: $GitHubRepo" }
+  else { Log "GitHub push xato (kod $($pr.code)): $(($pr.err + $pr.out).Trim().Split([char]10)[0])" }
+} catch {
+  Log "GitHub push xato: $($_.Exception.Message.Split([char]10)[0])"
 }
 
 $total = (Get-ChildItem $LocalRoot -Recurse -File | Measure-Object -Property Length -Sum).Sum
