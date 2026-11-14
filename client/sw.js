@@ -1,9 +1,9 @@
-const CACHE_NAME = 'olimp-lider-v14';
+const CACHE_NAME = 'olimp-lider-v15';
 // FAQAT o'zgarmaydigan og'ir fayllar (rasm/manifest) keshga oldindan olinadi.
 // JS/CSS ataylab ro'yxatda yo'q: ular network-first bilan olinadi, aks holda
 // yangi kod hech qachon foydalanuvchiga yetib bormaydi.
 const STATIC_ASSETS = [
-  '/assets/logo.png',
+  '/assets/logo-emblem.png',
   '/assets/banner.jpg',
   '/manifest.json'
 ];
@@ -136,8 +136,8 @@ self.addEventListener('push', (event) => {
   const data = event.data ? event.data.json() : {};
   const options = {
     body: data.body || 'Yangi xabar keldi',
-    icon: '/assets/logo.png',
-    badge: '/assets/logo.png',
+    icon: '/assets/logo-emblem.png',
+    badge: '/assets/logo-emblem.png',
     vibrate: [200, 100, 200],
     data: data.data || {},
     actions: [
