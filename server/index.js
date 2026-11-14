@@ -56,8 +56,30 @@ app.use((req, res, next) => {
   }
 });
 app.use(helmet({
-  contentSecurityPolicy: false,
+  // ---------- Content Security Policy ----------
+  // Ilova faqat o'z resurslarini ishlatadi (tashqi CDN yo'q).
+  // script/style uchun 'unsafe-inline' kerak: views ichida inline <script> va
+  // style= atributlari bor. Asosiy foyda: frame-ancestors (clickjacking),
+  // object-src, base-uri cheklovi.
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      fontSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+      mediaSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      upgradeInsecureRequests: [],
+    },
+  },
   crossOriginResourcePolicy: false,
+  frameguard: { action: 'deny' },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
 app.use(compression({ threshold: 1024 }));
 

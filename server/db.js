@@ -153,15 +153,22 @@ function verifyPassword(pw, hash) {
 async function seed() {
   const hasAdmin = store.users.some((u) => u.role === 'admin');
   if (!hasAdmin) {
-    store.users.push({
-      id: nextId('users'),
-      username: 'admin',
-      passwordHash: hashPassword('admin123'),
-      role: 'admin',
-      fullName: 'Administrator',
-    });
-    saveCollection('users');
-    console.log('Admin yaratildi: login=admin, parol=admin123');
+    // Ochiq parol bilan admin yaratilmaydi: 'admin/admin123' backdoor bo'lib qolardi.
+    // Admin bir marta ADMIN_BOOTSTRAP_PASSWORD orqali yaratiladi (kamida 8 belgi).
+    const boot = String(process.env.ADMIN_BOOTSTRAP_PASSWORD || '');
+    if (boot.length >= 8) {
+      store.users.push({
+        id: nextId('users'),
+        username: 'admin',
+        passwordHash: hashPassword(boot),
+        role: 'admin',
+        fullName: 'Administrator',
+      });
+      saveCollection('users');
+      console.log('Admin yaratildi (ADMIN_BOOTSTRAP_PASSWORD orqali)');
+    } else {
+      console.warn("DIQQAT: admin foydalanuvchi yo'q. Yaratish uchun ADMIN_BOOTSTRAP_PASSWORD ni belgilang (kamida 8 belgi).");
+    }
   }
 }
 
