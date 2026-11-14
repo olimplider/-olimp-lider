@@ -3248,6 +3248,33 @@ const b = req.body || {};
   res.json({ parentUsername: user.username, parentPassword: userPassword(user) });
 });
 
+// ---------- Ota-onalarning login/parolini birdan olish (chop etish uchun) ----------
+// Eski ota-onalarda pwEnc yo'q (migratsiyada saqlanmagan) -> ensureUserPassword
+// yangi parol yaratadi va uni shu yerda ko'rsatadi.
+app.get('/api/parents/credentials', authRequired, adminOnly, (req, res) => {
+  const superUser = req.user.role === 'admin' || req.user.role === 'super_admin';
+  const rows = [];
+  for (const u of db.store.users) {
+    if (u.role !== 'parent') continue;
+    if (!superUser && Number(u.branch_id) !== Number(req.user.branch_id)) continue;
+    const kids = telegram.parentStudents(u);
+    const st = kids[0] || null;
+    const pw = ensureUserPassword(u);
+    rows.push({
+      userId: u.id,
+      username: u.username,
+      password: pw,
+      student: st ? (st.lastName + ' ' + st.firstName).trim() : '',
+      className: st ? (st.className || '') : '',
+      phone: st ? (st.parentPhone || '') : '',
+      children: kids.length,
+    });
+  }
+  rows.sort((a, b) => String(a.className).localeCompare(String(b.className)) || String(a.student).localeCompare(String(b.student)));
+  db.saveCollection('users');
+  res.json({ rows, total: rows.length });
+});
+
 // ---------- Oylik to'lovlar ----------
 app.get('/api/payments', authRequired, (req, res) => {
   const month = Number(req.query.month);

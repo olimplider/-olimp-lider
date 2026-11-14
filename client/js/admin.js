@@ -398,6 +398,7 @@
     stuPayMap = await loadPayMap(now.getMonth() + 1, now.getFullYear());
 
     topbarActions.innerHTML = `<div class="toolbar">
+      <button class="btn btn-outline" onclick="window.appParentsCsv()">Ota-ona login/parol (CSV)</button>
       <button class="btn btn-outline" onclick="window.appExportWord()">${ICONS.doc.replace('width="18"', 'width="16"')} Word (docx)</button>
       <button class="btn btn-outline" onclick="window.appImportStudents()">📥 Import (Excel/CSV)</button>
       <button class="btn btn-primary" onclick="window.appAddStudent()">${ICONS.students.replace('width="18"', 'width="16"')} O'quvchi qo'shish</button>
@@ -2352,6 +2353,28 @@ initContact('contactTop');
       const txt = rows.map((r) => r.student + ' | ' + r.username + ' | ' + r.linkUrl).join('\n');
       await navigator.clipboard.writeText(txt);
       toast(rows.length + ' ta havola nusxalandi');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  // ---------- Ota-onalarning login/parolini CSV ga chiqarish ----------
+  window.appParentsCsv = async () => {
+    try {
+      const d = await API.get('/api/parents/credentials');
+      const rows = d.rows || [];
+      if (!rows.length) { toast('Ota-ona topilmadi'); return; }
+      const head = ['Sinf', 'O\'quvchi', 'Ota-ona ismi', 'Login', 'Parol', 'Telefon'];
+      const cell = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+      const lines = [head.map(cell).join(';')];
+      for (const r of rows) {
+        lines.push([r.className, r.student, r.username, r.username, r.password, r.phone].map(cell).join(';'));
+      }
+      const blob = new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'otaona_login_parol_' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      toast(rows.length + ' ta ota-ona ma\'lumoti yuklandi');
     } catch (e) { toast(e.message, 'error'); }
   };
 
