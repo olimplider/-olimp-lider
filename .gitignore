@@ -8,3 +8,6 @@ data/
 .DS_Store
 .neon
 .env.local
+
+# Eksport fayllari (o'quvchi ma'lumotlari - GitHub'ga yuklanMAYDI)
+exports/
