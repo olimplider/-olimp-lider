@@ -290,7 +290,6 @@ function ensureUserPassword(user) {
   return pw;
 }
 
-
 function authRequired(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
@@ -2034,8 +2033,6 @@ app.get('/api/students', authRequired, adminOnly, (req, res) => {
     return { ...rest, photoUrl: photo ? '/api/students/' + s.id + '/photo' : null };
   }));
 });
-
-app.post('/api/students', authRequired, adminOnly, (req, res) => {});
 
 // ---------- Telegram havolalari (barcha ota-onalar uchun) ----------
 // Maktab ota-onalarga havolani tarqatishi uchun: jadval, nusxalash, CSV.
