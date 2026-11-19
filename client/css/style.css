@@ -2187,3 +2187,31 @@ input[type=tel], select, textarea {
   .btn:hover,
   .btn:active { transform: none; }
 }
+
+/* ------------------- TOPBAR FORMALARI (QORONG'I XROM) -------------------
+   Toolbar (qidiruv, select, sana) .topbar ichida, ya'ni qorong'i fonda turadi.
+   Yengil palitradagi `input/…`, `.search-box input`, `.toolbar select` qoidalari
+   teng yoki yuqori specificitetda KEYIN keladi — shuning uchun bu blok fayl
+   oxirida qayta e'lon qilinadi. Aks holda: oq fon + qorong'i scope'dagi och
+   matn = ko'rinmas yozuv. */
+.topbar input,
+.topbar .search-box input,
+.topbar select,
+.topbar .toolbar select,
+.topbar textarea {
+  background: rgba(5, 8, 5, 0.55);
+  color: #f1f5f9;
+  border-color: rgba(212, 175, 55, 0.35);
+}
+.topbar input::placeholder,
+.topbar .search-box input::placeholder { color: #9aa398; }
+.topbar select option { background: #14181a; color: #f1f5f9; }
+.topbar input:focus,
+.topbar .search-box input:focus,
+.topbar select:focus,
+.topbar .toolbar select:focus,
+.topbar textarea:focus {
+  background: rgba(10, 13, 9, 0.7);
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.25);
+}
