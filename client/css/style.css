@@ -5,24 +5,53 @@
    ============================================================ */
 
 /* ============================================================
-   VARIANT A — yorug' kontent + qorong'i krom (sidebar/topbar/login)
+   VARIANT A — iOS YORUG' SHISHA (glassmorphism)
+   Wallpaper-blur fon + yarim-shaffof panellar + ichki hairline.
+   Qorong'i krom (sidebar/topbar/login) brend sifatida saqlanadi.
    Matn WCAG AA: --gold-ink = oltin matn uchun yorug' fon qiymati.
    ============================================================ */
 :root {
-  --bg: #f3f5f3;
-  --bg-grad: linear-gradient(135deg, #f3f5f3 0%, #edf1ee 35%, #f3f5f3 100%);
-  --card: #ffffff;
-  --card-2: #f7f9f7;
-  --card-3: #f1f4f1;
-  --card-4: #eaeeea;
-  --ink: #14181a;
-  --ink-2: #3c4448;
-  --muted: #656e72;
-  --muted-2: #6b7264;
+  /* ---- WALLPAPER (sof oq emas — yumshoq rangli gradient) ---- */
+  --bg: #e9eef3;
+  --wall-a: rgba(212, 175, 55, 0.10);   /* oltin dog' (chap-yuqori) */
+  --wall-b: rgba(120, 150, 190, 0.16);  /* sovuq-ko'k dog' (o'ng) */
+  --wall-c: rgba(110, 160, 140, 0.12);  /* salat dog' (past) */
+  --bg-grad:
+    radial-gradient(1100px 700px at 6% -8%, var(--wall-a), transparent 62%),
+    radial-gradient(900px 650px at 104% 12%, var(--wall-b), transparent 58%),
+    radial-gradient(1000px 700px at 50% 108%, var(--wall-c), transparent 60%),
+    linear-gradient(165deg, #eef2f7 0%, #e9eef3 45%, #e5ebf2 100%);
+
+  /* ---- SHISHA (glass) ---- */
+  --glass-tint: rgba(255, 255, 255, 0.66);        /* panel asosiy qatlami */
+  --glass-tint-strong: rgba(255, 255, 255, 0.80);  /* jadvallar: barqaror sath */
+  --glass-tint-soft: rgba(255, 255, 255, 0.52);    /* ichki yumshoq bloklar */
+  --glass-hair: rgba(255, 255, 255, 0.85);         /* ichki 1px highlight */
+  --glass-edge: rgba(23, 42, 64, 0.10);            /* tashqi yumshoq chegara */
+  --glass-blur: blur(18px) saturate(160%);
+  --glass-blur-strong: blur(26px) saturate(180%);  /* modal/toast */
+  --glass-radius: 22px;
+
+  /* ---- ASOSIY (shisha qatlamlari) ---- */
+  --card: rgba(255, 255, 255, 0.66);
+  --card-2: rgba(255, 255, 255, 0.58);
+  --card-3: rgba(255, 255, 255, 0.48);
+  --card-4: rgba(255, 255, 255, 0.36);
+  --card-gradient: linear-gradient(165deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.55));
+  --card-velvet: rgba(255, 255, 255, 0.72);
+  --code: #eef1f6;
+
+  /* ---- MATN (yumshoq quyuq kulrang — sof qora emas) ---- */
+  --ink: #2c3339;
+  --ink-2: #39414a;
+  --muted: #5b656d;
+  --muted-2: #67707a;
+
+  /* ---- OLTIN (aksent) ---- */
   --gold: #d4af37;
-  /* Oltin MATN: yorug' fonda 4.6:1 (AA). Qorong'i kromda --gold-ink qayta e'lon qilinadi */
+  /* Oltin MATN: shishada 5.33:1 (AA). Qorong'i kromda --gold-ink qayta e'lon qilinadi */
   --gold-ink: #7f6419;
-  --gold-dim: #b8922e;
+  --gold-dim: #8f7424;
   --gold-soft: rgba(212, 175, 55, 0.16);
   --gold-soft-2: rgba(212, 175, 55, 0.07);
   --gold-grad: linear-gradient(135deg, #e8cc6e, #d4af37 55%, #ae8c26);
@@ -30,23 +59,32 @@
   --red: #b0342a;
   --blue: #2f6f97;
   --crimson: #d84c4c;
-  --code: #f0f3f0;
-  --text: #14181a;
-  --border: #e2e6e2;
-  --border-soft: #eaeeea;
+  --text: #2c3339;
+  /* ---- CHEGRALAR (shisha ustida yumshoq, sovuq) ---- */
+  --border: rgba(23, 42, 64, 0.12);
+  --border-soft: rgba(23, 42, 64, 0.07);
   /* Interaktiv maydon chegarasi — 3:1 (WCAG 1.4.11) */
-  --border-field: #9aa29a;
-  --line: #d9ded9;
-  --line-soft: #eaeeea;
+  --border-field: #87909c;
+  --line: rgba(23, 42, 64, 0.14);
+  --line-soft: rgba(23, 42, 64, 0.08);
   /* Focus ring: yorug' fonda ham, qorong'ida ham ≥3:1 */
   --focus: #8a6d1f;
-  --radius-sm: 8px;
-  --radius: 14px;
-  --radius-lg: 20px;
+  /* ---- JADVAL SHISHASI (ko'zga yumshoq) ---- */
+  --table-surface: rgba(255, 255, 255, 0.80);
+  --table-zebra: rgba(236, 241, 246, 0.55);   /* effektiv ≈ #f4f7f9 */
+  --table-th: rgba(228, 234, 241, 0.92);      /* effektiv ≈ #eaeff4 */
+  --table-row-hover: rgba(212, 175, 55, 0.10);
+  /* ---- RADII (iOS 16–24px) ---- */
+  --radius-sm: 10px;
+  --radius: 16px;
+  --radius-lg: 22px;
   --radius-xl: 28px;
-  --shadow-sm: 0 1px 2px rgba(20, 24, 26, 0.06);
-  --shadow: 0 1px 2px rgba(20, 24, 26, 0.05), 0 14px 30px -16px rgba(20, 24, 26, 0.2);
-  --shadow-lg: 0 2px 4px rgba(20, 24, 26, 0.06), 0 32px 64px -24px rgba(20, 24, 26, 0.25);
+  /* ---- SOYA (yumshoq, ko'p qatlamli, sovuq) ---- */
+  --shadow-sm: 0 1px 2px rgba(23, 42, 64, 0.05);
+  --shadow: 0 1px 2px rgba(23, 42, 64, 0.05), 0 14px 30px -16px rgba(23, 42, 64, 0.18),
+            0 40px 60px -45px rgba(23, 42, 64, 0.25);
+  --shadow-lg: 0 2px 4px rgba(23, 42, 64, 0.05), 0 32px 64px -28px rgba(23, 42, 64, 0.28),
+               0 60px 90px -60px rgba(23, 42, 64, 0.30);
   --ring: 0 0 0 3px rgba(138, 109, 31, 0.3);
   --ring-danger: 0 0 0 3px rgba(176, 52, 42, 0.25);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -64,18 +102,16 @@
   --bg-grad-a: rgba(212, 175, 55, 0.08);
   --bg-grad-b: rgba(46, 62, 34, 0.06);
   --bg-grad-c: rgba(5, 7, 10, 0.03);
-  --card-gradient: linear-gradient(165deg, #ffffff, #f6f8f6);
-  --card-velvet: #ffffff;
-  --backdrop: rgba(20, 24, 26, 0.45);
+  --backdrop: rgba(23, 42, 64, 0.40);
   /* JS inline-stillardagi eski nomlar bilan moslik */
   --border-ok: #7f6419;
   --success: #2f7d33;
   --success-light: rgba(88, 169, 70, 0.14);
   --danger: #b0342a;
-  --text-muted: #656e72;
-  --blur: blur(12px) saturate(100%);
+  --text-muted: #5b656d;
+  --blur: blur(16px) saturate(150%);
   /* Tugma fon/chegrasi — qorong'i kromda scope'da qayta e'lon qilinadi */
-  --btn-bg: #ffffff;
+  --btn-bg: rgba(255, 255, 255, 0.72);
   --btn-border: rgba(138, 109, 31, 0.55);
 }
 
@@ -94,15 +130,19 @@
   --border-soft: rgba(212, 175, 55, 0.12);
   --line: #2c3424;
   --line-soft: rgba(212, 175, 55, 0.12);
-  --card: rgba(255, 255, 255, 0.06);
-  --card-2: rgba(255, 255, 255, 0.045);
-  --card-3: rgba(255, 255, 255, 0.035);
-  --card-4: rgba(255, 255, 255, 0.025);
+  --card: rgba(255, 255, 255, 0.07);
+  --card-2: rgba(255, 255, 255, 0.055);
+  --card-3: rgba(255, 255, 255, 0.045);
+  --card-4: rgba(255, 255, 255, 0.03);
   --code: #0b0e09;
-  --btn-bg: rgba(255, 255, 255, 0.06);
+  --btn-bg: rgba(255, 255, 255, 0.07);
   --btn-border: rgba(212, 175, 55, 0.45);
   /* Qorong'i kromda focus ring yaltiroq oltin bo'ladi */
   --focus: #d4af37;
+  /* Dark-glass tokenlar (iOS Control Center uslubi) */
+  --glass-hair: rgba(255, 255, 255, 0.12);
+  --glass-edge: rgba(0, 0, 0, 0.45);
+  --glass-blur: blur(20px) saturate(140%);
 }
 /* Login kartasidagi tugmalar qorong'i shishada — oltin chehra qoladi */
 .login-page .btn { border-color: rgba(212, 175, 55, 0.55); }
@@ -119,20 +159,28 @@
 html {
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
+  background-color: var(--bg);
 }
 
 body {
   font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
-  background: var(--bg-grad);
-  background-color: var(--bg);
   color: var(--text);
   min-height: 100vh;
-  background-attachment: fixed;
+  background: transparent; /* fon gradient body::before da — iOS'da attachment:fixed buziladi */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: 0.15px;
-  /* Prevent white flash on load */
+}
+
+/* Wallpaper — statik fixed qatlam (backdrop-filter uchun ham yaxshiroq) */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: var(--bg-grad);
   background-color: var(--bg);
+  pointer-events: none;
 }
 
 ::selection {
@@ -255,7 +303,7 @@ html {
   .sidebar-close { display: flex !important; }
   
   /* Panel va karta mobile uchun */
-  .panel { border-radius: 16px; margin-bottom: 14px; box-shadow: 0 6px 22px -12px rgba(20, 24, 26, 0.2); }
+  .panel { border-radius: 16px; margin-bottom: 14px; box-shadow: 0 6px 22px -12px rgba(23, 42, 64, 0.2); }
   .panel-header { padding: 13px 16px; }
   .panel-header h3 { font-size: 13px; letter-spacing: 0.3px; }
   .panel-body { padding: 14px 16px; }
@@ -556,7 +604,7 @@ select option { background: #ffffff; color: #14181a; }
   justify-content: center;
   border-radius: 8px;
 }
-.toggle-pass:hover { color: var(--gold-ink); background: rgba(20, 24, 26, 0.06); }
+.toggle-pass:hover { color: var(--gold-ink); background: rgba(23, 42, 64, 0.06); }
 
 .btn {
   display: inline-flex;
@@ -608,7 +656,7 @@ select option { background: #ffffff; color: #14181a; }
 .btn-danger { background: linear-gradient(180deg, #f6ded9, #eed0ca); border-color: #a03527; color: #7a2419; box-shadow: 0 6px 16px -8px rgba(160, 53, 39, 0.4); }
 .btn-danger:hover { box-shadow: 0 10px 24px -8px rgba(160, 53, 39, 0.5); transform: translateY(-1px); }
 .btn-ghost { background: transparent; color: var(--muted); border-color: transparent; }
-.btn-ghost:hover { background: rgba(20, 24, 26, 0.06); color: var(--text); }
+.btn-ghost:hover { background: rgba(23, 42, 64, 0.06); color: var(--text); }
 .btn-outline { background: transparent; color: var(--gold-ink); border-color: rgba(138, 109, 31, 0.55); }
 .btn-outline:hover { background: var(--gold-soft); box-shadow: 0 0 12px rgba(212, 175, 55, 0.3); }
 .btn-sm { padding: 7px 11px; font-size: 13px; border-radius: 8px; font-weight: 600; min-height: 36px; }
@@ -793,19 +841,25 @@ select option { background: #ffffff; color: #14181a; }
   margin-bottom: 24px;
 }
 .stat-card {
-  background: var(--card-gradient);
-  border: 1px solid var(--border);
+  position: relative;
+  background: var(--glass-tint);
+  border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow:
+    inset 0 1px 0 var(--glass-hair),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.25),
+    0 1px 2px rgba(23, 42, 64, 0.05),
+    0 16px 34px -18px rgba(23, 42, 64, 0.18);
   padding: 18px;
   display: flex;
   align-items: center;
   gap: 14px;
-  position: relative;
   overflow: hidden;
   transform-style: preserve-3d;
   transition: transform 0.28s var(--ease), box-shadow 0.28s var(--ease), border-color 0.28s var(--ease);
   animation: cardUp 0.45s var(--ease);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 .stat-card:hover { transform: translateY(-4px); border-color: rgba(212, 175, 55, 0.55); box-shadow: var(--shadow-lg); }
 @keyframes cardUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
@@ -838,21 +892,28 @@ select option { background: #ffffff; color: #14181a; }
 
 /* ------------------- PANEL / TABLE ------------------- */
 .panel {
-  background: var(--card-gradient);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
+  position: relative;
+  background: var(--glass-tint);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: var(--glass-radius);
+  box-shadow:
+    inset 0 1px 0 var(--glass-hair),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.28),
+    0 1px 2px rgba(23, 42, 64, 0.05),
+    0 18px 40px -20px rgba(23, 42, 64, 0.20),
+    0 50px 80px -55px rgba(23, 42, 64, 0.28);
   margin-bottom: 22px;
   overflow: hidden;
   animation: cardUp 0.4s var(--ease);
   transition: transform 0.3s var(--ease), border-color 0.3s var(--ease), box-shadow 0.3s var(--ease);
-  /* backdrop-filter olib tashlandi: har bir panel GPU yukini olardi.
-     Fon allaqachon quyuq gradient — blur ko'rinmasligi uchun kerak emas. */
+  /* Blur — desktopda opt-in (fayl oxiridagi blok), mobilda faqat shisha tint */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   /* Ensure visibility on mobile */
   opacity: 1;
   visibility: visible;
 }
-.panel:hover { border-color: rgba(138, 109, 31, 0.45); box-shadow: 0 4px 12px -2px rgba(20, 24, 26, 0.1), 0 8px 24px -4px rgba(212, 175, 55, 0.18); }
+.panel:hover { border-color: rgba(138, 109, 31, 0.45); box-shadow: 0 4px 12px -2px rgba(23, 42, 64, 0.1), 0 8px 24px -4px rgba(212, 175, 55, 0.18); }
 .panel-header {
   padding: 15px 18px;
   border-bottom: 1px solid rgba(212, 175, 55, 0.15);
@@ -869,24 +930,24 @@ select option { background: #ffffff; color: #14181a; }
 .panel-footer { padding: 14px 18px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
 
 table { width: 100%; border-collapse: separate; border-spacing: 0; }
-th, td { text-align: left; padding: 12px 14px; font-size: 14px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; background: rgba(255, 255, 255, 0.6); }
+th, td { text-align: left; padding: 12px 14px; font-size: 14px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; background: rgba(255, 255, 255, 0.55); color: var(--ink); }
 th {
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   color: var(--gold-ink);
-  background: #eef1ee;
+  background: var(--table-th);
   font-weight: 700;
 }
-tbody tr:nth-child(even) td { background: #f7f9f7; }
+tbody tr:nth-child(even) td { background: var(--table-zebra); }
 tr:last-child td { border-bottom: none; }
 tbody tr { transition: background 0.15s ease; }
-tbody tr:hover td { background: rgba(212, 175, 55, 0.1); }
+tbody tr:hover td { background: var(--table-row-hover); }
 td.actions { display: flex; gap: 6px; }
 
-.table-wrap { overflow-x: auto; overflow-y: hidden; border-radius: var(--radius-lg); background: #ffffff; }
+.table-wrap { overflow-x: auto; overflow-y: hidden; border-radius: var(--radius-lg); background: var(--table-surface); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4); }
 
-.table-cell-ghost { background: #ffffff; border-bottom: 1px solid var(--border-soft); }
+.table-cell-ghost { background: var(--table-surface); border-bottom: 1px solid var(--border-soft); }
 
 .avatar {
   width: 40px; height: 40px;
@@ -940,8 +1001,9 @@ td.actions { display: flex; gap: 6px; }
 /* ------------------- MODAL ------------------- */
 .modal-overlay {
   position: fixed; inset: 0;
-  background: rgba(20, 24, 26, 0.5);
-  backdrop-filter: blur(4px);
+  background: rgba(23, 42, 64, 0.42);
+  backdrop-filter: blur(6px) saturate(120%);
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
   display: none;
   align-items: center;
   justify-content: center;
@@ -951,25 +1013,32 @@ td.actions { display: flex; gap: 6px; }
 .modal-overlay.open { display: flex; animation: fadeIn 0.2s ease; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .modal {
-  background: linear-gradient(170deg, #ffffff, #f6f8f6);
-  border: 1px solid rgba(138, 109, 31, 0.35);
-  border-radius: var(--radius-lg);
+  background: linear-gradient(170deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.76));
+  backdrop-filter: var(--glass-blur-strong);
+  -webkit-backdrop-filter: var(--glass-blur-strong);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: var(--radius-xl);
   width: 100%;
   max-width: 640px;
   max-height: 92vh;
   overflow-y: auto;
-  box-shadow: var(--shadow-lg);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.3),
+    0 4px 0 rgba(23, 42, 64, 0.06),
+    0 40px 90px -30px rgba(23, 42, 64, 0.45);
   animation: modalIn 0.3s var(--ease);
   padding-bottom: 8px;
 }
 @keyframes modalIn { from { opacity: 0; transform: translateY(18px) scale(0.98); } to { opacity: 1; transform: none; } }
 .modal-header {
   padding: 18px 22px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-soft);
   display: flex; align-items: center; justify-content: space-between;
   position: sticky; top: 0; z-index: 2;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
 }
 .modal-header h3 { font-size: 16px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--ink-2); }
 .modal-close {
@@ -1015,11 +1084,12 @@ td.actions { display: flex; gap: 6px; }
 .modal-body { padding: 22px; }
 .modal-footer {
   padding: 15px 22px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-soft);
   display: flex; justify-content: flex-end; gap: 10px;
   position: sticky; bottom: 0;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
 }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .form-grid .full { grid-column: 1 / -1; }
@@ -1266,7 +1336,7 @@ td.rownum { color: var(--gold-ink); }
   display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-soft);
-  background: #f7f9f7;
+  background: var(--card-2);
 }
 .search-box { position: relative; display: flex; align-items: center; min-width: 210px; flex: 0 1 280px; }
 .search-box .s-ico { position: absolute; left: 11px; font-size: 13px; opacity: .6; pointer-events: none; }
@@ -1279,7 +1349,7 @@ td.rownum { color: var(--gold-ink); }
 .search-box .s-clear {
   position: absolute; right: 6px; width: 22px; height: 22px;
   border: none; border-radius: 50%; cursor: pointer;
-  background: rgba(20, 24, 26, 0.08); color: var(--ink);
+  background: rgba(23, 42, 64, 0.08); color: var(--ink);
   font-size: 15px; line-height: 1; display: flex; align-items: center; justify-content: center;
 }
 .search-box .s-clear:hover { background: rgba(212, 175, 55, .3); }
@@ -1368,7 +1438,7 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
 .tg-preview-list {
   max-height: 210px; overflow-y: auto; padding: 11px 13px;
   border-radius: 10px; border: 1px solid var(--border-soft);
-  background: #f7f9f7; font-size: 13px; line-height: 1.65; color: var(--ink);
+  background: var(--card-2); font-size: 13px; line-height: 1.65; color: var(--ink);
 }
 .tg-preview-list i { color: var(--muted); }
 
@@ -1435,12 +1505,12 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
 .journal { border-collapse: separate; border-spacing: 0; min-width: 640px; }
 .journal .jname {
   position: sticky; left: 0; z-index: 2;
-  background: #f7f9f7;
+  background: var(--table-surface);
   border-right: 1px solid var(--border);
   padding: 8px 12px; font-size: 13px; min-width: 150px;
   color: var(--ink);
 }
-.journal th.jname { background: #eef1ee; }
+.journal th.jname { background: var(--table-th); }
 .journal .jhead {
   padding: 6px 2px; font-size: 11px; color: var(--muted);
   border: 1px solid var(--border-soft); min-width: 34px; text-align: center;
@@ -1463,7 +1533,7 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
 
 /* ------------------- KUNDALIK (ota-ona) ------------------- */
 .diary-body { display: flex; flex-direction: column; gap: 8px; }
-.diary-entry { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #f7f9f7; border: 1px solid var(--border-soft); border-radius: 10px; }
+.diary-entry { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--card-2); border: 1px solid var(--border-soft); border-radius: 10px; }
 .diary-subj { font-weight: 600; font-size: 14px; }
 .diary-score { min-width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; font-weight: 800; font-size: 15px; background: var(--green-soft); color: #2f7d33; }
 .diary-score.a { background: var(--amber-soft); color: #8a6410; }
@@ -1557,7 +1627,7 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: #f0f3f0;
+  background: #eef1f6;
 }
 .bubble {
   max-width: 78%;
@@ -1604,7 +1674,7 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
 .skeleton {
   position: relative;
   overflow: hidden;
-  background: #e9ede9;
+  background: #eef1f6;
   border-radius: var(--radius-sm);
 }
 .skeleton::after {
@@ -1806,7 +1876,7 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
   .stat-value { font-size: 21px; }
   .stat-label { font-size: 11px; }
 
-  .panel { border-radius: 16px; margin-bottom: 14px; box-shadow: 0 6px 22px -12px rgba(20, 24, 26, 0.2); }
+  .panel { border-radius: 16px; margin-bottom: 14px; box-shadow: 0 6px 22px -12px rgba(23, 42, 64, 0.2); }
   .panel-header { padding: 13px 16px; }
   .panel-header h3 { font-size: 13px; letter-spacing: 0.3px; }
   .panel-body { padding: 14px 16px; }
@@ -1911,7 +1981,7 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
 /* Kartalar 3D da chuqurlashadi */
 .stat-card:hover {
   transform: translateY(-4px) rotateX(2.2deg) scale(1.012);
-  box-shadow: 0 18px 38px -14px rgba(20, 24, 26, 0.3), 0 0 0 1px rgba(138, 109, 31, 0.25);
+  box-shadow: 0 18px 38px -14px rgba(23, 42, 64, 0.3), 0 0 0 1px rgba(138, 109, 31, 0.25);
   border-color: rgba(138, 109, 31, 0.4);
 }
 .panel:hover {
@@ -1987,15 +2057,15 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
    ========================================================================== */
 
 /* ---------------------------------------------------------------- PANEL --- */
-/* Yumshoq "qalinlik": pastda 2 qatlam soya + tepa yorug'lik (yorug' uchun) */
+/* Shisha "qalinlik": ichki oq highlight + sovuq soya + oltin hairline ekstruziya */
 .panel {
   position: relative;
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, .9) inset,
-    0 -2px 4px rgba(20, 24, 26, .04) inset,
-    0 2px 0 rgba(20, 24, 26, .07),
-    0 3px 0 rgba(212, 175, 55, .18),
-    0 16px 34px -18px rgba(20, 24, 26, .28);
+    inset 0 1px 0 var(--glass-hair),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.28),
+    0 1px 0 rgba(23, 42, 64, .05),
+    0 3px 0 rgba(212, 175, 55, .14),
+    0 18px 40px -20px rgba(23, 42, 64, .22);
 }
 
 /* Panellar orasidagi "pol" - chuqurlik uchun */
@@ -2018,13 +2088,13 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
   border-radius: 12px;
   box-shadow:
     0 1px 0 rgba(255, 255, 255, .7) inset,
-    0 -2px 5px rgba(20, 24, 26, .06) inset,
-    0 2px 0 rgba(20, 24, 26, .1),
-    0 7px 14px -5px rgba(20, 24, 26, .22);
+    0 -2px 5px rgba(23, 42, 64, .06) inset,
+    0 2px 0 rgba(23, 42, 64, .1),
+    0 7px 14px -5px rgba(23, 42, 64, .22);
 }
 .stat-icon svg {
   transform: translateZ(0);
-  filter: drop-shadow(0 1px 1px rgba(20, 24, 26, .2));
+  filter: drop-shadow(0 1px 1px rgba(23, 42, 64, .2));
 }
 
 /* ------------------------------------------- NAV IKONKALARI (3D tugma) --- */
@@ -2049,9 +2119,9 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
   position: relative;
   box-shadow:
     0 1px 0 rgba(255, 255, 255, .65) inset,
-    0 -1px 0 rgba(20, 24, 26, .1) inset,
-    0 2px 0 rgba(20, 24, 26, .12),
-    0 6px 14px -7px rgba(20, 24, 26, .35);
+    0 -1px 0 rgba(23, 42, 64, .1) inset,
+    0 2px 0 rgba(23, 42, 64, .12),
+    0 6px 14px -7px rgba(23, 42, 64, .35);
   transform: translateY(0);
   transition: transform .12s var(--ease), box-shadow .12s var(--ease),
               background-color .12s var(--ease), border-color .12s var(--ease);
@@ -2060,16 +2130,16 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
   transform: translateY(-1px);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, .7) inset,
-    0 -1px 0 rgba(20, 24, 26, .1) inset,
-    0 3px 0 rgba(20, 24, 26, .13),
-    0 9px 18px -8px rgba(20, 24, 26, .4);
+    0 -1px 0 rgba(23, 42, 64, .1) inset,
+    0 3px 0 rgba(23, 42, 64, .13),
+    0 9px 18px -8px rgba(23, 42, 64, .4);
 }
 .btn:active {
   transform: translateY(3px);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, .5) inset,
-    0 0 0 rgba(20, 24, 26, .12),
-    0 2px 6px -3px rgba(20, 24, 26, .3);
+    0 0 0 rgba(23, 42, 64, .12),
+    0 2px 6px -3px rgba(23, 42, 64, .3);
 }
 .btn:focus-visible {
   transform: translateY(-1px);
@@ -2080,8 +2150,8 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
 .student-cell .av {
   border-radius: 50%;
   box-shadow:
-    0 2px 0 rgba(20, 24, 26, .12),
-    0 7px 14px -6px rgba(20, 24, 26, .3),
+    0 2px 0 rgba(23, 42, 64, .12),
+    0 7px 14px -6px rgba(23, 42, 64, .3),
     0 0 0 2px rgba(212, 175, 55, .45),
     0 1px 0 rgba(255, 255, 255, .7) inset;
 }
@@ -2090,7 +2160,7 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
 .badge {
   box-shadow:
     0 1px 0 rgba(255, 255, 255, .6) inset,
-    0 1px 0 rgba(20, 24, 26, .12);
+    0 1px 0 rgba(23, 42, 64, .12);
 }
 
 /* --------------------------------------------------------- STAT QIYMAT --- */
@@ -2098,25 +2168,25 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
 .stat-card {
   position: relative;
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, .9) inset,
-    0 -2px 4px rgba(20, 24, 26, .04) inset,
-    0 2px 0 rgba(20, 24, 26, .07),
-    0 3px 0 rgba(212, 175, 55, .16),
-    0 14px 30px -16px rgba(20, 24, 26, .3);
+    inset 0 1px 0 var(--glass-hair),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.25),
+    0 1px 0 rgba(23, 42, 64, .05),
+    0 3px 0 rgba(212, 175, 55, .13),
+    0 16px 34px -18px rgba(23, 42, 64, .22);
 }
 .stat-value {
   text-shadow: 0 1px 0 rgba(255, 255, 255, .8);
 }
 
 /* ------------------------------------------------------------- MODAL --- */
-/* Modal - yuzaga chiqqan qatlam */
+/* Modal - yuzaga chiqqan shisha qatlam */
 .modal {
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, .9) inset,
-    0 -3px 6px rgba(20, 24, 26, .05) inset,
-    0 4px 0 rgba(20, 24, 26, .08),
-    0 5px 0 rgba(212, 175, 55, .16),
-    0 34px 70px -22px rgba(20, 24, 26, .4);
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.3),
+    0 4px 0 rgba(23, 42, 64, .07),
+    0 5px 0 rgba(212, 175, 55, .14),
+    0 40px 90px -30px rgba(23, 42, 64, .45);
 }
 
 /* ------------------------------------------------------------- SIDEBAR --- */
@@ -2171,7 +2241,7 @@ tr.sel-row:hover { background: rgba(212, 175, 55, .14) !important; }
 input[type=text], input[type=password], input[type=number], input[type=date],
 input[type=tel], select, textarea {
   box-shadow:
-    inset 0 2px 5px rgba(20, 24, 26, .07),
+    inset 0 2px 5px rgba(23, 42, 64, .07),
     inset 0 -1px 0 rgba(255, 255, 255, .8),
     0 1px 0 rgba(255, 255, 255, .9);
 }
@@ -2214,4 +2284,45 @@ input[type=tel], select, textarea {
   background: rgba(10, 13, 9, 0.7);
   border-color: var(--focus);
   box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.25);
+}
+
+/* ==================== IOS SHISHA — BLUR BLOKLARI (fayl oxiri) ====================
+   Kaskad ustunligi uchun eng oxirida: opt-in desktop blur, mobil o'chirish,
+   eski brauzerlar uchun fallback. */
+@media (hover: hover) and (min-width: 1024px) {
+  .panel,
+  .stat-card,
+  .parent-hero,
+  .quick-btn {
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+  }
+}
+
+/* Mobil: blur yo'q (60fps), shisha tint + hairline saqlanadi */
+@media (max-width: 901px) {
+  .panel,
+  .stat-card {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(255, 255, 255, 0.74);
+    border-radius: 18px;
+    box-shadow:
+      inset 0 1px 0 var(--glass-hair),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.3),
+      0 8px 24px -14px rgba(23, 42, 64, 0.22);
+  }
+}
+
+/* Fallback: backdrop-filter bo'lmasa — opaqlikni oshiramiz */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .panel,
+  .stat-card,
+  .parent-hero,
+  .quick-btn {
+    background: rgba(250, 251, 253, 0.97);
+  }
+  .table-wrap {
+    background: #fbfcfd;
+  }
 }

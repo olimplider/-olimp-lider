@@ -1210,7 +1210,7 @@ topbarActions.innerHTML = `
     const balls = grades.filter((g) => g.score === 5).length;
     const fours = grades.filter((g) => g.score === 4).length;
     const threes = grades.filter((g) => g.score === 3).length;
-    return `<div class="panel" style="background:linear-gradient(135deg,#ffffff,#f6f8f6);color:#14181a;border-color:rgba(138,109,31,.45)">
+    return `<div class="panel" style="background:linear-gradient(165deg,rgba(255,255,255,.72),rgba(255,255,255,.55));color:#2c3339;border-color:rgba(255,255,255,.55)">
       <div class="panel-body" style="display:flex;align-items:center;gap:20px">
         ${avatarHtml(s)}
         <div><h3 style="font-size:18px">${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</h3><div style="opacity:.75;font-size:14px">${escapeHtml(s.className)} — ${escapeHtml(s.patronymic)}</div></div>

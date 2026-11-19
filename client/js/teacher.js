@@ -219,7 +219,7 @@
         </div>
       </div>
       <div class="stats-grid">${classCards}</div>
-      <div class="panel" style="background:linear-gradient(135deg,#ffffff,#f6f8f6);color:#14181a;border-color:rgba(138,109,31,.45)">
+      <div class="panel" style="background:linear-gradient(165deg,rgba(255,255,255,.72),rgba(255,255,255,.55));color:#2c3339;border-color:rgba(255,255,255,.55)">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 0 6px">
           <span style="font-size:15px;font-weight:700">Jami: ${totalStudents} o'quvchi • ${st.classes.length} sinf</span>
           <button class="btn btn-outline btn-sm" onclick="window.appNav('stats')">Batafsil statistika</button>
