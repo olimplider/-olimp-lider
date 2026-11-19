@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#0e130e">
+  <meta name="theme-color" content="#f3f5f3">
   <title>OLIMP-LIDER — O'qituvchi paneli</title>
   <link rel="icon" type="image/png" href="/assets/logo-emblem.png">
   <link rel="apple-touch-icon" href="/assets/logo-emblem.png">
@@ -11,25 +11,74 @@
   <style>
     /* Critical CSS - inline to prevent FOUC */
     :root {
-      --bg: #0a0d0a;
-      --bg-grad: linear-gradient(135deg, #0a0d0a 0%, #0f172a 45%, #0a0d0a 100%);
-      --ink: #f1f5f9;
-      --ink-2: #cbd5e1;
-      --muted: #94a3b8;
+      --bg: #f3f5f3;
+      --bg-grad: linear-gradient(135deg, #f3f5f3 0%, #edf1ee 35%, #f3f5f3 100%);
+      --card: #ffffff;
+      --card-2: #f7f9f7;
+      --card-3: #f1f4f1;
+      --card-4: #eaeeea;
+      --ink: #14181a;
+      --ink-2: #3c4448;
+      --muted: #656e72;
+      --muted-2: #6b7264;
       --gold: #d4af37;
+      --gold-ink: #7f6419;
+      --gold-dim: #b8922e;
       --gold-soft: rgba(212, 175, 55, 0.16);
-      --border: rgba(212, 175, 55, 0.35);
+      --gold-soft-2: rgba(212, 175, 55, 0.07);
+      --gold-grad: linear-gradient(135deg, #e8cc6e, #d4af37 55%, #ae8c26);
+      --green: #2f7d33;
+      --red: #b0342a;
+      --blue: #2f6f97;
+      --crimson: #d84c4c;
+      --code: #f0f3f0;
+      --text: #14181a;
+      --border: #e2e6e2;
+      --border-soft: #eaeeea;
+      --border-field: #9aa29a;
+      --line: #d9ded9;
+      --line-soft: #eaeeea;
+      --focus: #8a6d1f;
+      --radius-sm: 8px;
+      --radius: 14px;
       --radius-lg: 20px;
+      --radius-xl: 28px;
+      --shadow-sm: 0 1px 2px rgba(20, 24, 26, 0.06);
+      --shadow: 0 1px 2px rgba(20, 24, 26, 0.05), 0 14px 30px -16px rgba(20, 24, 26, 0.2);
+      --shadow-lg: 0 2px 4px rgba(20, 24, 26, 0.06), 0 32px 64px -24px rgba(20, 24, 26, 0.25);
+      --ring: 0 0 0 3px rgba(138, 109, 31, 0.3);
+      --ring-danger: 0 0 0 3px rgba(176, 52, 42, 0.25);
       --ease: cubic-bezier(0.22, 1, 0.36, 1);
-      --text: #f1f5f9;
-      --text-muted: #9aa488;
-      --success: #58a946;
-      --danger: #c0392b;
+      --acc: #d4af37;
+      --acc-deep: #7f6419;
+      --acc-2: #e8cc6e;
+      --gold-2: #e8cc6e;
+      --gold-soft-b: rgba(212, 175, 55, 0.18);
+      --acc-soft: rgba(212, 175, 55, 0.14);
+      --green-soft: rgba(88, 169, 70, 0.14);
+      --red-soft: rgba(192, 57, 43, 0.12);
+      --blue-soft: rgba(63, 107, 143, 0.14);
+      --amber-soft: rgba(255, 190, 70, 0.18);
+      --purple-soft: rgba(146, 110, 196, 0.14);
+      --bg-grad-a: rgba(212, 175, 55, 0.08);
+      --bg-grad-b: rgba(46, 62, 34, 0.06);
+      --bg-grad-c: rgba(5, 7, 10, 0.03);
+      --card-gradient: linear-gradient(165deg, #ffffff, #f6f8f6);
+      --card-velvet: #ffffff;
+      --backdrop: rgba(20, 24, 26, 0.45);
+      --blur: blur(12px) saturate(100%);
+      --border-ok: #7f6419;
+      --success: #2f7d33;
+      --success-light: rgba(88, 169, 70, 0.14);
+      --danger: #b0342a;
+      --text-muted: #656e72;
+      --btn-bg: #ffffff;
+      --btn-border: rgba(138, 109, 31, 0.55);
     }
     html { background-color: var(--bg); }
     body { background: var(--bg-grad); color: var(--ink); margin: 0; }
     * { touch-action: manipulation; }
-    :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+    :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   </style>
 </head>
 <body>

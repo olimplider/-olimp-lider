@@ -219,8 +219,8 @@
         </div>
       </div>
       <div class="stats-grid">${classCards}</div>
-      <div class="panel" style="background:linear-gradient(135deg,#0c0f0a,#151a10);color:#fff;border-color:rgba(212,175,55,.45)">
-        <div class="topbar" style="position:static;background:transparent;border:0;padding:0 0 6px">
+      <div class="panel" style="background:linear-gradient(135deg,#ffffff,#f6f8f6);color:#14181a;border-color:rgba(138,109,31,.45)">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 0 6px">
           <span style="font-size:15px;font-weight:700">Jami: ${totalStudents} o'quvchi • ${st.classes.length} sinf</span>
           <button class="btn btn-outline btn-sm" onclick="window.appNav('stats')">Batafsil statistika</button>
         </div>

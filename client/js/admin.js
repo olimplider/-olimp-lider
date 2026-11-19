@@ -1210,17 +1210,17 @@ topbarActions.innerHTML = `
     const balls = grades.filter((g) => g.score === 5).length;
     const fours = grades.filter((g) => g.score === 4).length;
     const threes = grades.filter((g) => g.score === 3).length;
-    return `<div class="panel" style="background:linear-gradient(135deg,#0c0f0a,#151a10);color:#fff;border-color:rgba(212,175,55,.45)">
+    return `<div class="panel" style="background:linear-gradient(135deg,#ffffff,#f6f8f6);color:#14181a;border-color:rgba(138,109,31,.45)">
       <div class="panel-body" style="display:flex;align-items:center;gap:20px">
         ${avatarHtml(s)}
-        <div><h3 style="font-size:18px">${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</h3><div style="opacity:.9;font-size:14px">${escapeHtml(s.className)} — ${escapeHtml(s.patronymic)}</div></div>
-        <div style="margin-left:auto;text-align:center;background:rgba(255,255,255,.15);border-radius:14px;padding:10px 18px">
-          <div style="font-size:26px;font-weight:800">${avg}</div><div style="font-size:12px;opacity:.9">o'rtacha baho</div>
+        <div><h3 style="font-size:18px">${escapeHtml(s.lastName)} ${escapeHtml(s.firstName)}</h3><div style="opacity:.75;font-size:14px">${escapeHtml(s.className)} — ${escapeHtml(s.patronymic)}</div></div>
+        <div style="margin-left:auto;text-align:center;background:rgba(212,175,55,.14);border-radius:14px;padding:10px 18px">
+          <div style="font-size:26px;font-weight:800">${avg}</div><div style="font-size:12px;opacity:.8">o'rtacha baho</div>
         </div>
         <div style="display:flex;gap:8px">
-          <span class="badge" style="background:#052e16;color:#4ade80">5: ${balls}</span>
-          <span class="badge" style="background:#082f49;color:#60a5fa">4: ${fours}</span>
-          <span class="badge" style="background:#451a03;color:#fbbf24">3: ${threes}</span>
+          <span class="badge" style="background:#e7f6e4;color:#1f7a29;border:1px solid rgba(88,169,70,.4)">5: ${balls}</span>
+          <span class="badge" style="background:#e8f1fb;color:#2f6f97;border:1px solid rgba(69,140,190,.4)">4: ${fours}</span>
+          <span class="badge" style="background:#fdf3dc;color:#8a6410;border:1px solid rgba(212,175,55,.4)">3: ${threes}</span>
         </div>
       </div>
     </div>`;
