@@ -1,4 +1,4 @@
-const CACHE_NAME = 'olimp-lider-v19';
+const CACHE_NAME = 'olimp-lider-v20';
 // FAQAT o'zgarmaydigan og'ir fayllar (rasm/manifest) keshga oldindan olinadi.
 // JS/CSS ataylab ro'yxatda yo'q: ular network-first bilan olinadi, aks holda
 // yangi kod hech qachon foydalanuvchiga yetib bormaydi.
